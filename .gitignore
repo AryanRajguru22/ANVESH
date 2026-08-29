@@ -12,3 +12,14 @@ venv/
 .env
 *.db
 *.sqlite3
+
+# M1: large media/model artifacts -- never commit these
+datasets/recorded/**/*.mp4
+datasets/recorded/**/*.avi
+datasets/recorded/**/*.mov
+models/*.pt
+models/*.onnx
+outputs/
+
+# Ultralytics run artifacts / local settings
+runs/

@@ -1,10 +1,14 @@
 [project]
 name = "anvesh"
 version = "0.1.0"
-description = "ANVESH V1 -- corridor congestion-cause reasoning system (M0 foundation)"
+description = "ANVESH V1 -- corridor congestion-cause reasoning system"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "opencv-python>=4.8",
+    "ultralytics>=8.0",
+    "numpy>=1.24",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

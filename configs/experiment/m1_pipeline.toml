@@ -1,0 +1,9 @@
+[pipeline]
+camera_id = "cam-dev-01"
+video_path = "datasets/recorded/dev/car-detection.mp4"
+model_name = "models/yolov8n.pt"
+confidence_threshold = 0.25
+tracker_config = "bytetrack.yaml"
+max_missed_frames = 5
+partial_after_missed_frames = 1
+output_video_path = "outputs/m1_demo.mp4"

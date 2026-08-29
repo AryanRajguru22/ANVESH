@@ -36,6 +36,26 @@ No other Part 5 entity was touched; `Measurement` itself still carries no
 unit field, since its other users (`TrafficState.mean_speed`,
 `PropagationPrediction.predicted_shockwave_speed`) are out of M2's scope
 and were left alone rather than changed pre-emptively.
+
+M3 addition -- `TrafficState.motion_space` (reuses the same `MotionSpace`
+enum): M3 aggregates per-camera `TrafficState` directly from M2's
+calibrated-or-not `VehicleTrack`s, so the exact same pixels-vs-metres
+ambiguity flagged above for `VehicleTrack` applies to `TrafficState.
+mean_speed` too -- and, less obviously, to `density` (vehicles per unit
+*length*, which is equally meaningless without knowing whether that
+length is in pixels or metres). `flow_rate` (vehicles per unit *time*)
+and `occupancy` (a dimensionless ratio) do NOT need this tag: time is
+always real wall-clock seconds regardless of calibration, and occupancy
+is a ratio of same-unit extents, so it cancels units either way. Same
+rule as `VehicleTrack`: `WORLD` means `mean_speed` is m/s and `density`
+is vehicles/metre; `IMAGE` means `mean_speed` is px/s and `density` is a
+non-metric proxy (vehicles per pixel-span) -- see
+`anvesh/perception/traffic_state.py`'s module docstring for how `density`
+itself is computed (a documented proxy in both cases; V1 has no surveyed
+per-camera segment length to compute a textbook vehicles/metre density
+from, only an optional manually-supplied `segment_length_m`). Required
+field, no default -- `anvesh/perception/traffic_state.py` and
+`tests/test_schemas.py` were updated for it.
 """
 
 from __future__ import annotations
@@ -247,6 +267,7 @@ class TrafficState:
     flow_rate: float
     density: float
     congestion_level: CongestionLevel
+    motion_space: MotionSpace
     schema_version: str = "1.0.0"
 
     def __post_init__(self) -> None:
@@ -259,6 +280,7 @@ class TrafficState:
         if not isinstance(self.mean_speed, Measurement):
             raise TypeError("mean_speed must be a Measurement instance")
         object.__setattr__(self, "congestion_level", CongestionLevel(self.congestion_level))
+        object.__setattr__(self, "motion_space", MotionSpace(self.motion_space))
 
 
 @dataclass(frozen=True)

@@ -1,0 +1,211 @@
+"""Minimal SQLite persistence (blueprint Part 4/13: `storage/db.py`).
+
+V1 scope: persist enough to reproduce and inspect one corridor-state
+decision -- the `CorridorState` itself, its per-camera segment
+`TrafficState`s, and the `ReliabilityScore`/provenance that fed the
+decision -- as one JSON payload per row, behind a small save/get/list
+interface (`CorridorStateStore`). This is deliberately NOT a repository/
+ORM layer: one table, no migrations framework, no query builder. Swap
+this module out later if SQLite's concurrency limits are actually hit
+(blueprint Part 2, LATER) -- callers only depend on `CorridorStateStore`'s
+three methods, not on SQLite specifics.
+
+`CorridorState`/`TrafficState` carry nested `Measurement`/enum values that
+`json` cannot serialize directly, so this module hand-writes explicit
+to-dict/from-dict conversions rather than a generic serializer -- fewer
+surprises than teaching `json` about enums, and the schema is small and
+fixed enough that this stays a handful of lines.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import time
+from pathlib import Path
+
+from anvesh.evidence.reliability import ReliabilityScore
+from anvesh.storage.schemas import CorridorState, Measurement, TrafficState
+from anvesh.world.corridor_state import CorridorStateAssembly
+
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS corridor_state_records (
+    corridor_state_id TEXT PRIMARY KEY,
+    corridor_id TEXT NOT NULL,
+    window_start REAL NOT NULL,
+    window_end REAL NOT NULL,
+    fused_congestion_level TEXT NOT NULL,
+    active_ranking_id TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+"""
+
+
+def _measurement_to_dict(m: Measurement) -> dict:
+    return {"value": m.value, "error": m.error}
+
+
+def _measurement_from_dict(d: dict) -> Measurement:
+    return Measurement(value=d["value"], error=d["error"])
+
+
+def _traffic_state_to_dict(ts: TrafficState) -> dict:
+    return {
+        "camera_id": ts.camera_id,
+        "window_start": ts.window_start,
+        "window_end": ts.window_end,
+        "occupancy": ts.occupancy,
+        "mean_speed": _measurement_to_dict(ts.mean_speed),
+        "vehicle_count": ts.vehicle_count,
+        "flow_rate": ts.flow_rate,
+        "density": ts.density,
+        "congestion_level": ts.congestion_level.value,
+        "motion_space": ts.motion_space.value,
+        "schema_version": ts.schema_version,
+    }
+
+
+def _traffic_state_from_dict(d: dict) -> TrafficState:
+    return TrafficState(
+        camera_id=d["camera_id"],
+        window_start=d["window_start"],
+        window_end=d["window_end"],
+        occupancy=d["occupancy"],
+        mean_speed=_measurement_from_dict(d["mean_speed"]),
+        vehicle_count=d["vehicle_count"],
+        flow_rate=d["flow_rate"],
+        density=d["density"],
+        congestion_level=d["congestion_level"],
+        motion_space=d["motion_space"],
+        schema_version=d.get("schema_version", "1.0.0"),
+    )
+
+
+def _corridor_state_to_dict(cs: CorridorState) -> dict:
+    return {
+        "corridor_state_id": cs.corridor_state_id,
+        "window": list(cs.window),
+        "segment_states": [_traffic_state_to_dict(s) for s in cs.segment_states],
+        "fused_congestion_level": cs.fused_congestion_level.value,
+        "active_ranking_id": cs.active_ranking_id,
+        "schema_version": cs.schema_version,
+    }
+
+
+def _corridor_state_from_dict(d: dict) -> CorridorState:
+    return CorridorState(
+        corridor_state_id=d["corridor_state_id"],
+        window=tuple(d["window"]),
+        segment_states=[_traffic_state_from_dict(s) for s in d["segment_states"]],
+        fused_congestion_level=d["fused_congestion_level"],
+        active_ranking_id=d["active_ranking_id"],
+        schema_version=d.get("schema_version", "1.0.0"),
+    )
+
+
+def _reliability_to_dict(r: ReliabilityScore) -> dict:
+    return {
+        "camera_id": r.camera_id,
+        "window_start": r.window_start,
+        "window_end": r.window_end,
+        "score": r.score,
+        "factors": dict(r.factors),
+        "method": r.method,
+    }
+
+
+def _reliability_from_dict(d: dict) -> ReliabilityScore:
+    return ReliabilityScore(
+        camera_id=d["camera_id"],
+        window_start=d["window_start"],
+        window_end=d["window_end"],
+        score=d["score"],
+        factors=d["factors"],
+        method=d.get("method", "weighted_heuristic_v1"),
+    )
+
+
+class CorridorStateStore:
+    """Save/get/list interface over one SQLite table of CorridorStateAssembly records."""
+
+    def __init__(self, db_path) -> None:
+        self._db_path = Path(db_path)
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self._db_path))
+        self._conn.execute(_SCHEMA_SQL)
+        self._conn.commit()
+
+    def save(self, corridor_id: str, assembly: CorridorStateAssembly) -> None:
+        payload = {
+            "corridor_state": _corridor_state_to_dict(assembly.corridor_state),
+            "reliability_by_camera": {
+                cid: _reliability_to_dict(score) for cid, score in assembly.reliability_by_camera.items()
+            },
+            "cameras_with_data": list(assembly.cameras_with_data),
+            "cameras_missing": list(assembly.cameras_missing),
+        }
+        cs = assembly.corridor_state
+        self._conn.execute(
+            """
+            INSERT INTO corridor_state_records
+                (corridor_state_id, corridor_id, window_start, window_end,
+                 fused_congestion_level, active_ranking_id, payload_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(corridor_state_id) DO UPDATE SET
+                corridor_id=excluded.corridor_id,
+                window_start=excluded.window_start,
+                window_end=excluded.window_end,
+                fused_congestion_level=excluded.fused_congestion_level,
+                active_ranking_id=excluded.active_ranking_id,
+                payload_json=excluded.payload_json,
+                created_at=excluded.created_at
+            """,
+            (
+                cs.corridor_state_id,
+                corridor_id,
+                cs.window[0],
+                cs.window[1],
+                cs.fused_congestion_level.value,
+                cs.active_ranking_id,
+                json.dumps(payload),
+                time.time(),
+            ),
+        )
+        self._conn.commit()
+
+    def get(self, corridor_state_id: str):
+        row = self._conn.execute(
+            "SELECT payload_json FROM corridor_state_records WHERE corridor_state_id = ?",
+            (corridor_state_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._deserialize(row[0])
+
+    def list_for_corridor(self, corridor_id: str) -> list:
+        rows = self._conn.execute(
+            "SELECT payload_json FROM corridor_state_records WHERE corridor_id = ? ORDER BY window_start ASC",
+            (corridor_id,),
+        ).fetchall()
+        return [self._deserialize(row[0]) for row in rows]
+
+    def _deserialize(self, payload_json: str) -> CorridorStateAssembly:
+        payload = json.loads(payload_json)
+        return CorridorStateAssembly(
+            corridor_state=_corridor_state_from_dict(payload["corridor_state"]),
+            reliability_by_camera={
+                cid: _reliability_from_dict(r) for cid, r in payload["reliability_by_camera"].items()
+            },
+            cameras_with_data=tuple(payload["cameras_with_data"]),
+            cameras_missing=tuple(payload["cameras_missing"]),
+        )
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def __enter__(self) -> "CorridorStateStore":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()

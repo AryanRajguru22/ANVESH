@@ -1,6 +1,6 @@
 """Storage package boundary.
 
-Currently holds only the frozen Part 5 data contracts (`schemas.py`).
-No SQLite, repositories, persistence, or database connections are
-implemented in M0.5 -- see blueprint Part 14, milestone M3 onward.
+`schemas.py` holds the frozen Part 5 data contracts. `db.py` (M3) adds
+minimal SQLite persistence for `CorridorState` records, behind a small
+`CorridorStateStore` interface -- not a repository/ORM layer.
 """

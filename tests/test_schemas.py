@@ -169,8 +169,42 @@ def test_traffic_state_valid_instance():
         flow_rate=1.8,
         density=0.12,
         congestion_level="building",
+        motion_space="world",
     )
     assert state.congestion_level is CongestionLevel.BUILDING
+    assert state.motion_space is MotionSpace.WORLD
+
+
+def test_traffic_state_image_space_variant_valid():
+    state = TrafficState(
+        camera_id="cam-downstream",
+        window_start=0.0,
+        window_end=30.0,
+        occupancy=0.3,
+        mean_speed=Measurement(value=40.0, error=2.0),
+        vehicle_count=5,
+        flow_rate=0.5,
+        density=5.0,
+        congestion_level="free_flow",
+        motion_space="image",
+    )
+    assert state.motion_space is MotionSpace.IMAGE
+
+
+def test_traffic_state_invalid_motion_space_raises_value_error():
+    with pytest.raises(ValueError):
+        TrafficState(
+            camera_id="cam-downstream",
+            window_start=0.0,
+            window_end=30.0,
+            occupancy=0.3,
+            mean_speed=Measurement(value=1.0, error=0.1),
+            vehicle_count=1,
+            flow_rate=0.1,
+            density=1.0,
+            congestion_level="free_flow",
+            motion_space="satellite",
+        )
 
 
 def test_evidence_valid_instance():
@@ -263,6 +297,7 @@ def test_corridor_state_valid_instance():
         flow_rate=1.8,
         density=0.12,
         congestion_level="building",
+        motion_space="world",
     )
     corridor = CorridorState(
         corridor_state_id="cs-1",
@@ -341,6 +376,7 @@ def test_occupancy_out_of_range_raises_value_error():
             flow_rate=1.8,
             density=0.12,
             congestion_level="building",
+            motion_space="world",
         )
 
 
@@ -356,6 +392,7 @@ def test_negative_vehicle_count_raises_value_error():
             flow_rate=1.8,
             density=0.12,
             congestion_level="building",
+            motion_space="world",
         )
 
 
@@ -385,6 +422,7 @@ def test_wrong_type_for_nested_value_object_raises_type_error():
             flow_rate=1.8,
             density=0.12,
             congestion_level="building",
+            motion_space="world",
         )
 
 

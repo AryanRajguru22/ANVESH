@@ -1,15 +1,20 @@
 from pathlib import Path
 
 from anvesh.evidence.reliability import ReliabilityScore
-from anvesh.storage.db import CorridorStateStore, RankingStore
+from anvesh.feedback.update_engine import apply_feedback
+from anvesh.storage.db import CorridorStateStore, FeedbackRecordStore, RankingStore
 from anvesh.storage.schemas import (
     CameraRole,
     CandidateCauseHypothesis,
     CandidateOutcome,
     ConfidenceTier,
     CongestionLevel,
+    DataCompleteness,
+    HypothesisUpdateOutcome,
     Measurement,
     MotionSpace,
+    PropagationObservation,
+    PropagationPrediction,
     RankedHypothesisEntry,
     TrafficState,
 )
@@ -192,3 +197,92 @@ def test_ranking_store_persists_high_conflict_outcome(tmp_path: Path):
         store.save(_ranking("rank-1", outcome=CandidateOutcome.HIGH_CONFLICT))
         loaded = store.get("rank-1")
         assert loaded.outcome == CandidateOutcome.HIGH_CONFLICT
+
+
+# ---------------------------------------------------------------------------
+# M5: FeedbackRecordStore
+# ---------------------------------------------------------------------------
+
+
+def _prediction():
+    return PropagationPrediction(
+        prediction_id="pred-1",
+        based_on_ranking_id="rank-1",
+        predicted_shockwave_speed=Measurement(value=2.0, error=0.0),
+        predicted_arrival_camera="cam-B",
+        predicted_arrival_time=100.0,
+        predicted_queue_growth_rate=5.0,
+        method="rankine_hugoniot_kinematic_wave_v1",
+    )
+
+
+def _observation(completeness=DataCompleteness.FULL, camera="cam-B"):
+    return PropagationObservation(
+        observation_id="obs-1",
+        prediction_id="pred-1",
+        actual_arrival_camera=camera,
+        actual_arrival_time=100.0,
+        actual_queue_growth_rate=5.0,
+        data_completeness=completeness,
+    )
+
+
+def test_feedback_record_store_confirmed_round_trip(tmp_path: Path):
+    prior = _ranking("rank-1")
+    result = apply_feedback("upd-1", "rank-1-revised", prior, _prediction(), _observation())
+
+    with FeedbackRecordStore(tmp_path / "anvesh.sqlite3") as store:
+        store.save(result)
+        loaded = store.get("upd-1")
+
+        assert loaded is not None
+        assert loaded.update.outcome == HypothesisUpdateOutcome.CONFIRMED
+        assert loaded.prior_ranking.ranking_id == "rank-1"
+        assert loaded.revised_ranking.ranking_id == "rank-1-revised"
+        assert loaded.prediction.predicted_arrival_camera == "cam-B"
+        assert loaded.observation.actual_arrival_camera == "cam-B"
+        assert loaded.reason == result.reason
+
+
+def test_feedback_record_store_preserves_none_discrepancy_for_evidence_missing(tmp_path: Path):
+    prior = _ranking("rank-1")
+    result = apply_feedback("upd-2", "rank-1-revised", prior, _prediction(), _observation(completeness=DataCompleteness.MISSING))
+
+    with FeedbackRecordStore(tmp_path / "anvesh.sqlite3") as store:
+        store.save(result)
+        loaded = store.get("upd-2")
+
+        assert loaded.update.outcome == HypothesisUpdateOutcome.EVIDENCE_MISSING
+        assert loaded.update.discrepancy is None
+        # the revised ranking must round-trip as identical in content to the prior one
+        assert [e.belief for e in loaded.revised_ranking.ranked_list] == [e.belief for e in loaded.prior_ranking.ranked_list]
+
+
+def test_feedback_record_store_get_missing_returns_none(tmp_path: Path):
+    with FeedbackRecordStore(tmp_path / "anvesh.sqlite3") as store:
+        assert store.get("does-not-exist") is None
+
+
+def test_feedback_record_store_list_for_prior_ranking(tmp_path: Path):
+    prior = _ranking("rank-1")
+    r1 = apply_feedback("upd-a", "rank-a", prior, _prediction(), _observation())
+    r2 = apply_feedback("upd-b", "rank-b", prior, _prediction(), _observation(camera="cam-A"))  # contradicted
+
+    with FeedbackRecordStore(tmp_path / "anvesh.sqlite3") as store:
+        store.save(r1)
+        store.save(r2)
+        results = store.list_for_prior_ranking("rank-1")
+        assert {r.update.update_id for r in results} == {"upd-a", "upd-b"}
+
+
+def test_feedback_record_store_upserts_on_same_update_id(tmp_path: Path):
+    prior = _ranking("rank-1")
+    confirmed = apply_feedback("upd-1", "rank-r1", prior, _prediction(), _observation())
+    contradicted = apply_feedback("upd-1", "rank-r2", prior, _prediction(), _observation(camera="cam-A"))
+
+    with FeedbackRecordStore(tmp_path / "anvesh.sqlite3") as store:
+        store.save(confirmed)
+        store.save(contradicted)
+        results = store.list_for_prior_ranking("rank-1")
+        assert len(results) == 1
+        assert results[0].update.outcome == HypothesisUpdateOutcome.CONTRADICTED

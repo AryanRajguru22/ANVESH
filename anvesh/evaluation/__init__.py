@@ -1,4 +1,7 @@
-"""Evaluation package boundary (metrics, A/B/C/ANVESH baseline harness).
+"""Evaluation package boundary.
 
-Not implemented in M0 -- see blueprint Part 14, milestone M8.
+`baselines.py` (M4, blueprint Part 10) is a thin, uniform dispatch that
+runs Baseline A/B/C/ANVESH on the SAME evidence -- not the full
+evaluation/metrics/ablation framework, which stays unimplemented until
+milestone M8 (`metrics.py`, `experiment_run.py`).
 """

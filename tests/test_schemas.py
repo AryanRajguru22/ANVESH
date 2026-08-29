@@ -243,6 +243,18 @@ def test_candidate_cause_hypothesis_valid_instance():
     assert ranking.ranked_list[0].confidence_tier is ConfidenceTier.MEDIUM
 
 
+def test_candidate_cause_hypothesis_high_conflict_outcome_valid():
+    ranking = CandidateCauseHypothesis(
+        ranking_id="rank-2",
+        corridor_state_id="cs-1",
+        outcome="high_conflict",
+        ranked_list=[],
+        engine_model_id="ds-fusion",
+        engine_model_version="0.1.0",
+    )
+    assert ranking.outcome is CandidateOutcome.HIGH_CONFLICT
+
+
 def test_propagation_prediction_and_observation_valid_instances():
     prediction = PropagationPrediction(
         prediction_id="pred-1",

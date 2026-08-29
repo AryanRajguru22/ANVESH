@@ -136,6 +136,21 @@ def test_missing_observations_zero_tracks_marks_speed_unavailable():
     assert result.density_quality == DataQuality.OBSERVED
 
 
+def test_empty_road_is_never_misread_as_congested():
+    """Regression: a 0.0 m/s *placeholder* over zero vehicles must not be
+    fed through the same speed threshold as a genuine 0.0 m/s over present
+    (gridlocked) vehicles -- an empty road is free-flowing, not congested."""
+    result = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, _tracker())
+    assert result.traffic_state.congestion_level == CongestionLevel.FREE_FLOW
+
+
+def test_empty_windows_do_not_accumulate_false_congestion_over_time():
+    tracker = _tracker()
+    for _ in range(5):
+        result = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, tracker)
+        assert result.traffic_state.congestion_level == CongestionLevel.FREE_FLOW
+
+
 def test_invalid_window_raises_value_error():
     with pytest.raises(ValueError):
         aggregate_traffic_state("cam-A", 10.0, 0.0, [], MotionSpace.WORLD, _tracker())

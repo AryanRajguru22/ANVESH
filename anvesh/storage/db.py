@@ -4,17 +4,20 @@ V1 scope: persist enough to reproduce and inspect one corridor-state
 decision -- the `CorridorState` itself, its per-camera segment
 `TrafficState`s, and the `ReliabilityScore`/provenance that fed the
 decision -- as one JSON payload per row, behind a small save/get/list
-interface (`CorridorStateStore`). This is deliberately NOT a repository/
-ORM layer: one table, no migrations framework, no query builder. Swap
-this module out later if SQLite's concurrency limits are actually hit
-(blueprint Part 2, LATER) -- callers only depend on `CorridorStateStore`'s
-three methods, not on SQLite specifics.
+interface (`CorridorStateStore`). M4 adds `RankingStore` alongside it,
+same file, same SQLite connection pattern, one more small table --
+NOT a second database system, an ORM, or a repository layer: still one
+save/get/list interface per concern, no migrations framework, no query
+builder. Swap either store out later if SQLite's concurrency limits are
+actually hit (blueprint Part 2, LATER) -- callers only depend on these
+classes' methods, not on SQLite specifics.
 
-`CorridorState`/`TrafficState` carry nested `Measurement`/enum values that
-`json` cannot serialize directly, so this module hand-writes explicit
-to-dict/from-dict conversions rather than a generic serializer -- fewer
-surprises than teaching `json` about enums, and the schema is small and
-fixed enough that this stays a handful of lines.
+`CorridorState`/`TrafficState`/`CandidateCauseHypothesis` carry nested
+`Measurement`/enum values that `json` cannot serialize directly, so this
+module hand-writes explicit to-dict/from-dict conversions rather than a
+generic serializer -- fewer surprises than teaching `json` about enums,
+and the schemas are small and fixed enough that this stays a handful of
+lines per entity.
 """
 
 from __future__ import annotations
@@ -25,7 +28,13 @@ import time
 from pathlib import Path
 
 from anvesh.evidence.reliability import ReliabilityScore
-from anvesh.storage.schemas import CorridorState, Measurement, TrafficState
+from anvesh.storage.schemas import (
+    CandidateCauseHypothesis,
+    CorridorState,
+    Measurement,
+    RankedHypothesisEntry,
+    TrafficState,
+)
 from anvesh.world.corridor_state import CorridorStateAssembly
 
 _SCHEMA_SQL = """
@@ -205,6 +214,129 @@ class CorridorStateStore:
         self._conn.close()
 
     def __enter__(self) -> "CorridorStateStore":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+
+# ---------------------------------------------------------------------------
+# M4: CandidateCauseHypothesis (ranking) persistence
+# ---------------------------------------------------------------------------
+
+_RANKING_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS ranking_records (
+    ranking_id TEXT PRIMARY KEY,
+    corridor_state_id TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+"""
+
+
+def _ranked_entry_to_dict(entry: RankedHypothesisEntry) -> dict:
+    return {
+        "hypothesis_id": entry.hypothesis_id,
+        "belief": entry.belief,
+        "plausibility": entry.plausibility,
+        "confidence_tier": entry.confidence_tier.value,
+        "supporting_evidence_refs": list(entry.supporting_evidence_refs),
+        "contradicting_evidence_refs": list(entry.contradicting_evidence_refs),
+    }
+
+
+def _ranked_entry_from_dict(d: dict) -> RankedHypothesisEntry:
+    return RankedHypothesisEntry(
+        hypothesis_id=d["hypothesis_id"],
+        belief=d["belief"],
+        plausibility=d["plausibility"],
+        confidence_tier=d["confidence_tier"],
+        supporting_evidence_refs=d["supporting_evidence_refs"],
+        contradicting_evidence_refs=d["contradicting_evidence_refs"],
+    )
+
+
+def _ranking_to_dict(ranking: CandidateCauseHypothesis) -> dict:
+    return {
+        "ranking_id": ranking.ranking_id,
+        "corridor_state_id": ranking.corridor_state_id,
+        "outcome": ranking.outcome.value,
+        "ranked_list": [_ranked_entry_to_dict(e) for e in ranking.ranked_list],
+        "engine_model_id": ranking.engine_model_id,
+        "engine_model_version": ranking.engine_model_version,
+        "schema_version": ranking.schema_version,
+    }
+
+
+def _ranking_from_dict(d: dict) -> CandidateCauseHypothesis:
+    return CandidateCauseHypothesis(
+        ranking_id=d["ranking_id"],
+        corridor_state_id=d["corridor_state_id"],
+        outcome=d["outcome"],
+        ranked_list=[_ranked_entry_from_dict(e) for e in d["ranked_list"]],
+        engine_model_id=d["engine_model_id"],
+        engine_model_version=d["engine_model_version"],
+        schema_version=d.get("schema_version", "1.0.0"),
+    )
+
+
+class RankingStore:
+    """Save/get/list interface over one SQLite table of CandidateCauseHypothesis records.
+
+    Same file, same connection pattern as `CorridorStateStore` -- a second
+    small table in the one V1 SQLite database, not a second database
+    system.
+    """
+
+    def __init__(self, db_path) -> None:
+        self._db_path = Path(db_path)
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self._db_path))
+        self._conn.execute(_RANKING_SCHEMA_SQL)
+        self._conn.commit()
+
+    def save(self, ranking: CandidateCauseHypothesis) -> None:
+        self._conn.execute(
+            """
+            INSERT INTO ranking_records (ranking_id, corridor_state_id, outcome, payload_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(ranking_id) DO UPDATE SET
+                corridor_state_id=excluded.corridor_state_id,
+                outcome=excluded.outcome,
+                payload_json=excluded.payload_json,
+                created_at=excluded.created_at
+            """,
+            (
+                ranking.ranking_id,
+                ranking.corridor_state_id,
+                ranking.outcome.value,
+                json.dumps(_ranking_to_dict(ranking)),
+                time.time(),
+            ),
+        )
+        self._conn.commit()
+
+    def get(self, ranking_id: str):
+        row = self._conn.execute(
+            "SELECT payload_json FROM ranking_records WHERE ranking_id = ?",
+            (ranking_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return _ranking_from_dict(json.loads(row[0]))
+
+    def list_for_corridor_state(self, corridor_state_id: str) -> list:
+        rows = self._conn.execute(
+            "SELECT payload_json FROM ranking_records WHERE corridor_state_id = ? ORDER BY created_at ASC",
+            (corridor_state_id,),
+        ).fetchall()
+        return [_ranking_from_dict(json.loads(row[0])) for row in rows]
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def __enter__(self) -> "RankingStore":
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

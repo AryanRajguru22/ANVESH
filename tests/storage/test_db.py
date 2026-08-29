@@ -1,8 +1,18 @@
 from pathlib import Path
 
 from anvesh.evidence.reliability import ReliabilityScore
-from anvesh.storage.db import CorridorStateStore
-from anvesh.storage.schemas import CameraRole, CongestionLevel, Measurement, MotionSpace, TrafficState
+from anvesh.storage.db import CorridorStateStore, RankingStore
+from anvesh.storage.schemas import (
+    CameraRole,
+    CandidateCauseHypothesis,
+    CandidateOutcome,
+    ConfidenceTier,
+    CongestionLevel,
+    Measurement,
+    MotionSpace,
+    RankedHypothesisEntry,
+    TrafficState,
+)
 from anvesh.world.corridor import CameraPlacement, CorridorTopology
 from anvesh.world.corridor_state import assemble_corridor_state
 
@@ -116,3 +126,69 @@ def test_context_manager_closes_connection(tmp_path: Path):
     with CorridorStateStore(tmp_path / "anvesh.sqlite3") as store:
         store.save("corridor-01", _assembly())
         assert store.get("cs-1") is not None
+
+
+def _ranking(ranking_id="rank-1", corridor_state_id="cs-1", outcome=CandidateOutcome.RANKED):
+    return CandidateCauseHypothesis(
+        ranking_id=ranking_id,
+        corridor_state_id=corridor_state_id,
+        outcome=outcome,
+        ranked_list=[
+            RankedHypothesisEntry(
+                hypothesis_id="H1",
+                belief=0.6,
+                plausibility=0.8,
+                confidence_tier=ConfidenceTier.MEDIUM,
+                supporting_evidence_refs=["cam-A:H1:0-10"],
+                contradicting_evidence_refs=[],
+            )
+        ],
+        engine_model_id="ds_fusion",
+        engine_model_version="v1",
+    )
+
+
+def test_ranking_store_save_and_get_round_trip(tmp_path: Path):
+    with RankingStore(tmp_path / "anvesh.sqlite3") as store:
+        store.save(_ranking())
+        loaded = store.get("rank-1")
+
+        assert loaded is not None
+        assert loaded.ranking_id == "rank-1"
+        assert loaded.outcome == CandidateOutcome.RANKED
+        assert len(loaded.ranked_list) == 1
+        assert loaded.ranked_list[0].hypothesis_id == "H1"
+        assert loaded.ranked_list[0].confidence_tier == ConfidenceTier.MEDIUM
+        assert loaded.ranked_list[0].supporting_evidence_refs == ["cam-A:H1:0-10"]
+
+
+def test_ranking_store_get_missing_returns_none(tmp_path: Path):
+    with RankingStore(tmp_path / "anvesh.sqlite3") as store:
+        assert store.get("does-not-exist") is None
+
+
+def test_ranking_store_list_for_corridor_state(tmp_path: Path):
+    with RankingStore(tmp_path / "anvesh.sqlite3") as store:
+        store.save(_ranking("rank-1", "cs-1"))
+        store.save(_ranking("rank-2", "cs-1"))
+        store.save(_ranking("rank-3", "cs-OTHER"))
+
+        results = store.list_for_corridor_state("cs-1")
+        assert {r.ranking_id for r in results} == {"rank-1", "rank-2"}
+
+
+def test_ranking_store_upserts_on_same_id(tmp_path: Path):
+    with RankingStore(tmp_path / "anvesh.sqlite3") as store:
+        store.save(_ranking("rank-1", outcome=CandidateOutcome.RANKED))
+        store.save(_ranking("rank-1", outcome=CandidateOutcome.HIGH_CONFLICT))
+
+        results = store.list_for_corridor_state("cs-1")
+        assert len(results) == 1
+        assert results[0].outcome == CandidateOutcome.HIGH_CONFLICT
+
+
+def test_ranking_store_persists_high_conflict_outcome(tmp_path: Path):
+    with RankingStore(tmp_path / "anvesh.sqlite3") as store:
+        store.save(_ranking("rank-1", outcome=CandidateOutcome.HIGH_CONFLICT))
+        loaded = store.get("rank-1")
+        assert loaded.outcome == CandidateOutcome.HIGH_CONFLICT

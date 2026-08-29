@@ -126,7 +126,22 @@ class CongestionStateTracker:
 
     def update(self, mean_speed_value: float, occupancy: float, motion_space: MotionSpace) -> CongestionLevel:
         raw = _raw_pressure(mean_speed_value, occupancy, motion_space, self._thresholds)
+        return self._advance(raw)
 
+    def update_empty(self) -> CongestionLevel:
+        """Advance one window with zero vehicles observed.
+
+        Not the same as calling `update(0.0, 0.0, ...)`: a genuine 0 m/s
+        mean speed over *present* vehicles is a strong congestion signal,
+        but a 0 m/s placeholder over *zero* vehicles means "empty road,"
+        which is a free-flow signal, not a congestion one -- an empty
+        window must never be misread as gridlock. See
+        `aggregate_traffic_state`'s vehicle_count == 0 branch, which is
+        the only caller of this method.
+        """
+        return self._advance("low")
+
+    def _advance(self, raw: str) -> CongestionLevel:
         if self._state == CongestionLevel.FREE_FLOW:
             self._state = CongestionLevel.BUILDING if raw == "high" else CongestionLevel.FREE_FLOW
         elif self._state == CongestionLevel.BUILDING:
@@ -208,7 +223,10 @@ def aggregate_traffic_state(
             density = float(vehicle_count)  # non-metric proxy: "vehicles observed", not vehicles/length
             density_quality = DataQuality.ESTIMATED
 
-    congestion_level = congestion_tracker.update(mean_speed.value, occupancy, motion_space)
+    if vehicle_count == 0:
+        congestion_level = congestion_tracker.update_empty()
+    else:
+        congestion_level = congestion_tracker.update(mean_speed.value, occupancy, motion_space)
 
     traffic_state = TrafficState(
         camera_id=camera_id,

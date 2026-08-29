@@ -56,6 +56,19 @@ per-camera segment length to compute a textbook vehicles/metre density
 from, only an optional manually-supplied `segment_length_m`). Required
 field, no default -- `anvesh/perception/traffic_state.py` and
 `tests/test_schemas.py` were updated for it.
+
+M4 addition -- `CandidateOutcome.HIGH_CONFLICT`: M4's Dempster-Shafer
+fusion (`fusion/ds_fusion.py`) can detect that two cameras' evidence is
+in near-total conflict (the classical, decades-old critique of vanilla
+Dempster combination -- blueprint Part 6's own documented limitation).
+That is a materially different situation from ordinary
+`insufficient_evidence` (no camera has much to say) and design rule #5
+("conflict between cameras must remain visible") requires it stay
+distinguishable, not silently folded into `insufficient_evidence`. This
+is a single additive enum value -- `RANKED` and `INSUFFICIENT_EVIDENCE`
+are unchanged, no other field on any entity was touched, and no existing
+code path treated "high_conflict" as an invalid value to construct
+(verified against `tests/test_schemas.py` before making the change).
 """
 
 from __future__ import annotations
@@ -170,6 +183,7 @@ class ConfidenceTier(str, Enum):
 class CandidateOutcome(str, Enum):
     RANKED = "ranked"
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+    HIGH_CONFLICT = "high_conflict"
 
 
 class DataCompleteness(str, Enum):

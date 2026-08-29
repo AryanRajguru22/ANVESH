@@ -23,6 +23,7 @@ from anvesh.storage.schemas import (
     HypothesisUpdate,
     HypothesisUpdateOutcome,
     Measurement,
+    MotionSpace,
     OcclusionState,
     PropagationObservation,
     PropagationPrediction,
@@ -120,9 +121,41 @@ def test_vehicle_track_valid_instance():
         occlusion_state="visible",
         position_history=[WorldPosition(world_x=1.0, world_y=2.0, timestamp=10.0)],
         speed_estimate=Measurement(value=8.3, error=0.4),
+        motion_space="world",
     )
     assert track.vehicle_class is VehicleClass.CAR
     assert track.occlusion_state is OcclusionState.VISIBLE
+    assert track.motion_space is MotionSpace.WORLD
+
+
+def test_vehicle_track_image_space_variant_valid():
+    track = VehicleTrack(
+        track_id="cam-upstream:13",
+        camera_id="cam-upstream",
+        first_seen=10.0,
+        last_seen=12.5,
+        vehicle_class="car",
+        occlusion_state="visible",
+        position_history=[(100.0, 200.0, 10.0)],
+        speed_estimate=Measurement(value=42.0, error=1.0),
+        motion_space="image",
+    )
+    assert track.motion_space is MotionSpace.IMAGE
+
+
+def test_vehicle_track_invalid_motion_space_raises_value_error():
+    with pytest.raises(ValueError):
+        VehicleTrack(
+            track_id="cam-upstream:14",
+            camera_id="cam-upstream",
+            first_seen=10.0,
+            last_seen=12.5,
+            vehicle_class="car",
+            occlusion_state="visible",
+            position_history=[],
+            speed_estimate=Measurement(value=1.0, error=0.1),
+            motion_space="satellite",
+        )
 
 
 def test_traffic_state_valid_instance():

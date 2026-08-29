@@ -1,46 +1,39 @@
 """Conversion from perception-internal types into the frozen ANVESH schemas
 (`anvesh.storage.schemas`), per blueprint Part 5 / Part 3 module 7.
 
-FLAGGED INCOMPATIBILITY (reported to the user rather than silently patched):
+M2 UPDATE (resolves the M1-flagged incompatibility):
 
-Part 5 types `VehicleTrack.position_history` as a list of `WorldPosition`
-samples ("via CalibrationProfile projection") and `VehicleTrack.speed_estimate`
-as a generic `Measurement` (a bare float +/- error, with no unit field).
-Both presuppose a `CalibrationProfile` (`world/calibration.py`), which does
-not exist until milestone M2. M1 has no calibration.
+M1 flagged that `VehicleTrack.position_history`/`speed_estimate` presuppose
+a `CalibrationProfile` that did not exist yet, and worked around it by
+always populating image-space pixels, documented only in prose. M2 adds
+real calibration (`world/calibration.py`) and a schema-level
+`MotionSpace` field (see `anvesh/storage/schemas.py`'s "M2 addition" note),
+so this module now branches explicitly:
 
-Rather than editing the frozen schema or fabricating a fake calibration,
-this module makes the gap visible in the data instead of hiding it:
+  - `calibration_profile` given and CALIBRATED: `position_history` is
+    built from real `WorldPosition` instances (metres, via
+    `CalibrationProfile.image_to_world`), `speed_estimate` is a metric
+    `Measurement` (m/s, via `motion.compute_world_space_speed`), and
+    `motion_space=MotionSpace.WORLD`.
+  - `calibration_profile` omitted or UNCALIBRATED: unchanged from M1 --
+    `position_history` stays plain `(x, y, t)` pixel tuples (never
+    `WorldPosition`), `speed_estimate` is pixels/second (via
+    `motion.compute_image_space_speed`), and
+    `motion_space=MotionSpace.IMAGE`.
 
-  - `position_history` is populated with plain `(x, y, timestamp)` tuples
-    in IMAGE-SPACE pixel coordinates -- deliberately NOT `WorldPosition`
-    instances. `VehicleTrack.__post_init__` does not validate
-    `position_history`'s element type, so this is schema-legal, but this
-    module avoids the `WorldPosition` type on purpose: that type's own
-    name and docstring mean "calibrated world coordinates," which pixels
-    are not.
-  - `speed_estimate` is populated with a `Measurement` whose `value` is in
-    PIXELS PER SECOND (from `anvesh.perception.motion`), never m/s. There
-    is no per-field unit tag on the frozen `Measurement` type to record
-    this, so the unit is only recoverable from this module's
-    documentation and from `Camera.calibration_profile_id` being the
-    placeholder `UNCALIBRATED_PROFILE_ID` below.
-
-M2 (camera calibration) is expected to either populate a real
-`CalibrationProfile` and re-run this conversion to produce true
-`WorldPosition`/metric `Measurement` values, or the schema may need a
-`calibration_status`/unit field added at that point -- a decision for
-whoever owns `storage/schemas.py`, not made unilaterally here.
+The previous M1 pixel-space convention is used ONLY in the second branch
+now -- i.e. only where no valid calibration exists -- per the M2
+instruction that it "must no longer be used where valid calibration
+exists."
 """
 
 from __future__ import annotations
 
-from anvesh.perception.motion import compute_image_space_speed
+from anvesh.perception.motion import compute_image_space_speed, compute_world_space_speed
 from anvesh.perception.track_manager import TrackState
 from anvesh.perception.types import RawDetection
-from anvesh.storage.schemas import CameraObservation, Measurement, VehicleTrack
-
-UNCALIBRATED_PROFILE_ID = "uncalibrated-identity-v1"
+from anvesh.storage.schemas import CameraObservation, Measurement, MotionSpace, VehicleTrack, WorldPosition
+from anvesh.world.calibration import CalibrationProfile
 
 
 def build_camera_observation(
@@ -72,14 +65,32 @@ def _detection_to_dict(detection: RawDetection) -> dict:
     }
 
 
-def build_vehicle_track(camera_id: str, state: TrackState) -> VehicleTrack:
+def build_vehicle_track(
+    camera_id: str,
+    state: TrackState,
+    calibration_profile: CalibrationProfile = None,
+) -> VehicleTrack:
     """Convert one finished/active TrackState into a VehicleTrack.
 
-    See the module docstring for why `position_history` holds image-space
-    pixel tuples (not `WorldPosition`) and `speed_estimate` is in
-    pixels/second (not m/s).
+    Produces a WORLD-space track (metres, `MotionSpace.WORLD`) if
+    `calibration_profile` is given and calibrated; otherwise falls back to
+    the M1 IMAGE-space convention (`MotionSpace.IMAGE`). See the module
+    docstring for the full rationale.
     """
-    speed = compute_image_space_speed(state.trajectory)
+    if calibration_profile is not None and calibration_profile.is_calibrated:
+        world_trajectory = [
+            (*calibration_profile.image_to_world((x, y)), t) for (x, y, t) in state.trajectory
+        ]
+        speed = compute_world_space_speed(world_trajectory)
+        position_history = [WorldPosition(world_x=wx, world_y=wy, timestamp=t) for (wx, wy, t) in world_trajectory]
+        speed_estimate = Measurement(value=speed.speed_m_per_s, error=speed.error_m_per_s)
+        motion_space = MotionSpace.WORLD
+    else:
+        speed = compute_image_space_speed(state.trajectory)
+        position_history = list(state.trajectory)
+        speed_estimate = Measurement(value=speed.speed_px_per_s, error=speed.error_px_per_s)
+        motion_space = MotionSpace.IMAGE
+
     return VehicleTrack(
         track_id=f"{camera_id}:{state.track_id}",
         camera_id=camera_id,
@@ -87,6 +98,7 @@ def build_vehicle_track(camera_id: str, state: TrackState) -> VehicleTrack:
         last_seen=state.last_seen,
         vehicle_class=state.vehicle_class,
         occlusion_state=state.occlusion_state,
-        position_history=list(state.trajectory),
-        speed_estimate=Measurement(value=speed.speed_px_per_s, error=speed.error_px_per_s),
+        position_history=position_history,
+        speed_estimate=speed_estimate,
+        motion_space=motion_space,
     )

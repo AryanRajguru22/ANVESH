@@ -15,6 +15,27 @@ tables themselves for brevity.
 
 Note on naming: Part 5's `VehicleTrack.class` field is renamed here to
 `vehicle_class` because `class` is a reserved word in Python.
+
+M2 addition -- `VehicleTrack.motion_space` (`MotionSpace` enum):
+Part 5's text assumes `position_history`/`speed_estimate` are always
+calibrated world values, but M1 shipped without camera calibration
+(`world/calibration.py` did not exist yet) and so populated both fields
+with image-space pixels, documented only in `anvesh/perception/
+schema_conversion.py`'s module docstring -- a real record's caller had no
+schema-level way to tell pixels from metres. M2 adds calibration, so a
+given VehicleTrack may now legitimately be in either space depending on
+whether its camera has a valid CalibrationProfile. `motion_space` makes
+that machine-checkable instead of documentation-only: `IMAGE` means
+`position_history` is `(x, y, t)` pixel tuples and `speed_estimate.value`
+is pixels/second; `WORLD` means `position_history` is `WorldPosition`
+instances (metres) and `speed_estimate.value` is metres/second. This is a
+required field (no default), so every existing call site that constructs
+a VehicleTrack had to be updated to pass it explicitly -- see
+`anvesh/perception/schema_conversion.py` and `tests/test_schemas.py`.
+No other Part 5 entity was touched; `Measurement` itself still carries no
+unit field, since its other users (`TrafficState.mean_speed`,
+`PropagationPrediction.predicted_shockwave_speed`) are out of M2's scope
+and were left alone rather than changed pre-emptively.
 """
 
 from __future__ import annotations
@@ -91,6 +112,20 @@ class OcclusionState(str, Enum):
     VISIBLE = "visible"
     PARTIAL = "partial"
     LOST = "lost"
+
+
+class MotionSpace(str, Enum):
+    """How to interpret VehicleTrack.position_history/speed_estimate.
+
+    Added in M2 (see the module docstring's "M2 addition" note) -- this
+    was not part of the original Part 5 table text, which assumed
+    position_history/speed_estimate would always be calibrated world
+    values. `IMAGE` is the fallback for a camera with no valid
+    CalibrationProfile.
+    """
+
+    IMAGE = "image"
+    WORLD = "world"
 
 
 class CongestionLevel(str, Enum):
@@ -186,6 +221,7 @@ class VehicleTrack:
     occlusion_state: OcclusionState
     position_history: list
     speed_estimate: Measurement
+    motion_space: MotionSpace
     schema_version: str = "1.0.0"
 
     def __post_init__(self) -> None:
@@ -197,6 +233,7 @@ class VehicleTrack:
             raise TypeError("speed_estimate must be a Measurement instance")
         object.__setattr__(self, "vehicle_class", VehicleClass(self.vehicle_class))
         object.__setattr__(self, "occlusion_state", OcclusionState(self.occlusion_state))
+        object.__setattr__(self, "motion_space", MotionSpace(self.motion_space))
 
 
 @dataclass(frozen=True)

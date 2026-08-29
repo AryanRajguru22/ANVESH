@@ -1,10 +1,14 @@
-"""Pipeline orchestration for M1: wires ingestion -> tracking -> track
-management -> schema conversion (+ optional visualization) together.
+"""Single-camera pipeline orchestration: wires ingestion -> tracking ->
+track management -> schema conversion (+ optional visualization) together.
 
 Deliberately thin -- each stage lives in its own, independently testable
 module (ingestion.py, tracking.py, track_manager.py, motion.py,
 schema_conversion.py, visualize.py). This module only sequences them; it
 is not itself the entry point (see scripts/run_pipeline.py).
+
+`calibration_profile` is optional (M2): when given and calibrated, tracks
+come out in world-space (metres); otherwise this camera's tracks stay
+image-space, exactly as in M1. See `schema_conversion.build_vehicle_track`.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ def run_m1_pipeline(
     max_missed_frames: int = 5,
     partial_after_missed_frames: int = 1,
     visualization_output_path=None,
+    calibration_profile=None,
 ) -> M1PipelineResult:
     frame_source = VideoFileFrameSource(video_path)
     track_manager = TrackManager(
@@ -79,5 +84,8 @@ def run_m1_pipeline(
             writer.release()
 
     track_manager.finalize()
-    result.vehicle_tracks = [build_vehicle_track(camera_id, state) for state in track_manager.all_tracks()]
+    result.vehicle_tracks = [
+        build_vehicle_track(camera_id, state, calibration_profile=calibration_profile)
+        for state in track_manager.all_tracks()
+    ]
     return result

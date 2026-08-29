@@ -2,7 +2,9 @@ from pathlib import Path
 
 from anvesh.perception.pipeline import run_m1_pipeline
 from anvesh.perception.types import RawDetection, TrackedDetection
-from anvesh.storage.schemas import CameraObservation, OcclusionState, VehicleClass, VehicleTrack
+from anvesh.storage.schemas import CameraObservation, MotionSpace, OcclusionState, VehicleClass, VehicleTrack
+from anvesh.world.calibration import fit_planar_homography
+from tests.world.support import make_reference_points
 
 
 class ScriptedTracker:
@@ -75,6 +77,39 @@ def test_end_to_end_pipeline_produces_expected_schema_objects(tiny_video_path: P
     # track "2" only ever seen once, still active at end-of-stream -> finalized by pipeline
     assert len(track_2.position_history) == 1
     assert track_2.speed_estimate.value == 0.0  # single sample: no measurable motion
+
+    assert track_1.motion_space == MotionSpace.IMAGE
+    assert track_2.motion_space == MotionSpace.IMAGE
+
+
+def test_end_to_end_pipeline_produces_world_space_tracks_when_calibrated(tiny_video_path: Path):
+    """Same scripted scenario as above, but with a calibrated profile
+    supplied -- the pipeline must thread it through to produce metric,
+    WORLD-space VehicleTracks instead of the M1 pixel-space ones."""
+    script = {
+        0: [("1", (10.0, 10.0))],
+        1: [("1", (250.0, 200.0))],
+    }
+    tracker = ScriptedTracker(script)
+    profile = fit_planar_homography("calib-e2e", "cam-e2e", make_reference_points())
+
+    result = run_m1_pipeline(
+        video_path=tiny_video_path,
+        camera_id="cam-e2e",
+        tracker=tracker,
+        model_id="scripted-test",
+        model_version="0.0.0",
+        max_missed_frames=1,
+        partial_after_missed_frames=1,
+        calibration_profile=profile,
+    )
+
+    assert len(result.vehicle_tracks) == 1
+    track = result.vehicle_tracks[0]
+    assert track.motion_space == MotionSpace.WORLD
+    assert track.speed_estimate.value > 0.0
+    for sample in track.position_history:
+        assert hasattr(sample, "world_x") and hasattr(sample, "world_y")
 
 
 def test_end_to_end_pipeline_writes_annotated_video(tiny_video_path: Path, tmp_path: Path):

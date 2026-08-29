@@ -1,4 +1,8 @@
-"""Fusion package boundary (temporal alignment, Dempster-Shafer cross-camera fusion).
+"""Fusion package boundary.
 
-Not implemented in M0 -- see blueprint Part 14, milestone M4.
+M2 implements only temporal alignment (`alignment.py`, blueprint Part 3
+module 6) -- synchronizing two cameras' observation streams onto a shared
+timeline. Cross-camera *evidence* fusion (Dempster-Shafer combination,
+blueprint Part 6) is NOT implemented yet -- see blueprint Part 14,
+milestone M4.
 """

@@ -1,4 +1,7 @@
-"""World package boundary (camera calibration, corridor topology).
+"""World representation (blueprint Part 3, modules 2 and 7): camera
+calibration (image <-> world/road coordinates) and corridor topology
+(camera ordering, inter-camera distance).
 
-Not implemented in M0 -- see blueprint Part 14, milestone M2.
+No cross-camera fusion, cause reasoning, or temporal alignment lives here
+-- alignment is `anvesh/fusion/alignment.py`.
 """

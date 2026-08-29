@@ -1,0 +1,8 @@
+[app]
+name = "anvesh"
+version = "0.1.0"
+environment = "development"
+
+[logging]
+level = "INFO"
+format = "%(asctime)s %(levelname)s %(name)s: %(message)s"

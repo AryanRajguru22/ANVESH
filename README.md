@@ -3,12 +3,14 @@
 Corridor-level, multi-camera traffic congestion-cause reasoning system.
 Implementation authority: [`docs/ANVESH_V1_IMPLEMENTATION_BLUEPRINT.md`](docs/ANVESH_V1_IMPLEMENTATION_BLUEPRINT.md).
 
-**Current status: M0.5 -- repository foundation + frozen data contracts.**
-No perception, fusion, hypothesis, propagation, feedback, or dashboard logic
-exists yet. The `anvesh/` subpackages (`perception/`, `world/`, `evidence/`,
-`fusion/`, `hypotheses/`, `propagation/`, `feedback/`, `api/`, `evaluation/`)
-are empty boundaries reserved for later milestones. The Part 5 data
-contracts (schema only, no persistence) are frozen in
+**Current status: M0 -> M6.5 complete.** Single- and two-camera perception,
+world alignment, corridor-state assembly, cross-camera evidence fusion,
+propagation + feedback, a controlled synthetic evaluation harness, and a
+real-world validation/hardening checkpoint (see
+[`docs/M6_5_REAL_WORLD_VALIDATION.md`](docs/M6_5_REAL_WORLD_VALIDATION.md))
+are implemented. This is a research prototype: candidate-cause ranking
+only, never causal inference, with no validated real-world accuracy claim.
+The Part 5 data contracts (schema only) are frozen in
 [`anvesh/storage/schemas.py`](anvesh/storage/schemas.py).
 
 ## Requirements

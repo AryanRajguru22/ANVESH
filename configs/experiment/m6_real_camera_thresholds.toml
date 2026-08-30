@@ -1,0 +1,65 @@
+# M6.5 Phase 2 -- REAL-CAMERA threshold configuration.
+#
+# This file is OPTIONAL and additive. It is never loaded unless
+# `scripts/run_real_world_validation.py` is invoked with
+# `--real-camera-config configs/experiment/m6_real_camera_thresholds.toml`.
+# Every M6 default-configuration run (no CLI flag) is completely unaffected
+# by this file's existence.
+#
+# RULE FOLLOWED HERE (per M6.5 Phase 2 instructions): a threshold is only
+# overridden here if its new value can be derived from something that does
+# NOT depend on how much traffic happened to appear in the M6 validation
+# clips -- i.e. the same derivation method would produce the same number
+# regardless of whether these two clips showed light or heavy traffic.
+# A threshold is NEVER changed here merely because a different value would
+# flip an `insufficient_evidence` outcome to `ranked`.
+#
+# INVESTIGATION SUMMARY (see M6.5 Phase 1/2 diagnostics):
+#   - Both validation videos are 768x432 px, same elevated top-down
+#     parking-lot-style camera geometry, entire frame usable road surface.
+#   - Median high-confidence (conf>=0.4) car/bus/truck bounding-box area,
+#     measured directly from each camera's own YOLOv8n detections:
+#       seq1_car_detection:        17,777 px^2  (n=44 high-confidence boxes)
+#       seq2_person_bicycle_car:   21,399 px^2  (n=70 high-confidence boxes)
+#   - This gives an independent, geometry-based estimate of how many
+#     vehicles could physically fit in each camera's field of view:
+#         max_capacity_vehicles ~= frame_area_px2 / median_vehicle_area_px2
+#     which is a function of camera geometry and typical vehicle footprint
+#     only -- NOT of how many vehicles this specific clip happened to show.
+#       seq1: 331,776 / 17,777 = 18.66 -> floor -> 18  (default was 20)
+#       seq2: 331,776 / 21,399 = 15.50 -> floor -> 15  (default was 20)
+#   - Note this derivation lands CLOSE to the existing default of 20, not
+#     far below it as first hypothesized in Phase 1 -- it does NOT support
+#     a claim that the default was "wildly oversized." The dominant honest
+#     explanation for low occupancy readings in these clips remains
+#     genuinely light real traffic (observed max ~4 vehicles/window vs. a
+#     geometric capacity of ~15-18), not a miscalibrated threshold.
+#
+# THRESHOLDS DELIBERATELY LEFT UNCHANGED (no independent justification found):
+#   - EvidenceThresholds.elevated_vehicle_count (H5, default 8): no
+#     historical/reference traffic-volume baseline exists for either camera
+#     to derive an "elevated" cutoff from; any value would either restate
+#     the geometric capacity above (too close to reverse-engineering an
+#     outcome) or be an unsupported guess. Left at the project default.
+#   - CongestionThresholds (free_speed_m_per_s, congested_speed_m_per_s,
+#     high_occupancy, low_occupancy): no verifiable traffic-engineering
+#     standard was available to cite for these two specific cameras. Left
+#     at the project defaults.
+#   - EvidenceThresholds.stopped_speed_m_per_s / min_dwell_seconds: both
+#     hypotheses (H2/H3) that use them are gated by `motion_space == WORLD`
+#     and both real-camera sequences are `motion_space = IMAGE`
+#     (uncalibrated, no real corridor geometry was fabricated) -- these
+#     values are inert for these sequences regardless of what they're set
+#     to, so changing them here would have no honest justification either.
+#
+# Sections below use `sequence_threshold` (not `sequence`) so this file can
+# never be mistaken for -- or accidentally merged into -- the M6
+# `m6_validation.toml` sequence list.
+
+[[sequence_threshold]]
+sequence_id = "seq1_car_detection"
+max_capacity_vehicles = 18  # frame_area(331776) / median_vehicle_area_px2(17777) = 18.66, floored
+
+[[sequence_threshold]]
+sequence_id = "seq2_person_bicycle_car"
+max_capacity_vehicles = 15  # frame_area(331776) / median_vehicle_area_px2(21399) = 15.50, floored

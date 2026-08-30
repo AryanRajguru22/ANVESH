@@ -1,0 +1,32 @@
+# M6 real-world validation configuration.
+#
+# The two [[sequence]] entries are INDEPENDENT real-video sequences, not
+# two views of one physical corridor. `camera_role` only exists so the
+# non-corridor two-sequence integration test (scripts/
+# run_real_world_validation.py) has something to assign to M2's
+# CorridorTopology/M4's evidence-role logic -- it is an arbitrary
+# bookkeeping choice for exercising the interface, never a claim about
+# real spatial relationship between these two sequences.
+
+[validation]
+window_seconds = 10.0
+model_name = "models/yolov8n.pt"
+confidence_threshold = 0.25
+tracker_config = "bytetrack.yaml"
+max_missed_frames = 5
+partial_after_missed_frames = 1
+max_capacity_vehicles = 20
+
+[[sequence]]
+sequence_id = "seq1_car_detection"
+description = "Reused from M1: single fixed camera, cars only, clear conditions."
+video_path = "datasets/recorded/dev/car-detection.mp4"
+camera_id = "cam-seq1"
+camera_role = "upstream"
+
+[[sequence]]
+sequence_id = "seq2_person_bicycle_car"
+description = "New for M6: mixed road users (pedestrians, bicycles, cars)."
+video_path = "datasets/recorded/validation/person-bicycle-car-detection.mp4"
+camera_id = "cam-seq2"
+camera_role = "downstream"

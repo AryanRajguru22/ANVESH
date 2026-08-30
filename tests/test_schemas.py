@@ -28,6 +28,7 @@ from anvesh.storage.schemas import (
     PropagationObservation,
     PropagationPrediction,
     RankedHypothesisEntry,
+    SafetyEvent,
     TrafficState,
     VehicleClass,
     VehicleTrack,
@@ -441,3 +442,111 @@ def test_wrong_type_for_nested_value_object_raises_type_error():
 def test_negative_measurement_error_raises_value_error():
     with pytest.raises(ValueError):
         Measurement(value=5.0, error=-0.1)
+
+
+# ---------------------------------------------------------------------------
+# 5. SafetyEvent (M7 addition)
+# ---------------------------------------------------------------------------
+
+
+def test_safety_event_required_fields():
+    field_names = {f.name for f in dataclasses.fields(SafetyEvent)}
+    assert field_names == {
+        "event_id",
+        "event_type",
+        "camera_id",
+        "track_id",
+        "window",
+        "motion_space",
+        "confidence_tier",
+        "schema_version",
+    }
+
+
+def test_safety_event_valid_instance():
+    event = SafetyEvent(
+        event_id="evt-1",
+        event_type="stopped_vehicle",
+        camera_id="cam-upstream",
+        track_id="cam-upstream:12",
+        window=(10.0, 25.0),
+        motion_space="world",
+        confidence_tier="medium",
+    )
+    assert event.motion_space is MotionSpace.WORLD
+    assert event.confidence_tier is ConfidenceTier.MEDIUM
+    assert event.event_type == "stopped_vehicle"
+    assert event.schema_version == "1.0.0"
+
+
+def test_safety_event_missing_required_field_raises_type_error():
+    with pytest.raises(TypeError):
+        SafetyEvent(  # type: ignore[call-arg]
+            event_id="evt-1",
+            event_type="stopped_vehicle",
+            camera_id="cam-upstream",
+            track_id="cam-upstream:12",
+            window=(10.0, 25.0),
+            motion_space="world",
+        )
+
+
+def test_safety_event_invalid_motion_space_raises_value_error():
+    with pytest.raises(ValueError):
+        SafetyEvent(
+            event_id="evt-1",
+            event_type="stopped_vehicle",
+            camera_id="cam-upstream",
+            track_id="cam-upstream:12",
+            window=(10.0, 25.0),
+            motion_space="satellite",
+            confidence_tier="medium",
+        )
+
+
+def test_safety_event_invalid_confidence_tier_raises_value_error():
+    with pytest.raises(ValueError):
+        SafetyEvent(
+            event_id="evt-1",
+            event_type="stopped_vehicle",
+            camera_id="cam-upstream",
+            track_id="cam-upstream:12",
+            window=(10.0, 25.0),
+            motion_space="world",
+            confidence_tier="extreme",
+        )
+
+
+def test_safety_event_empty_identifiers_raise_value_error():
+    base = dict(
+        event_id="evt-1",
+        event_type="stopped_vehicle",
+        camera_id="cam-upstream",
+        track_id="cam-upstream:12",
+        window=(10.0, 25.0),
+        motion_space="world",
+        confidence_tier="medium",
+    )
+    for field_name in ("event_id", "event_type", "camera_id", "track_id"):
+        kwargs = dict(base)
+        kwargs[field_name] = ""
+        with pytest.raises(ValueError):
+            SafetyEvent(**kwargs)
+
+
+def test_safety_event_window_end_before_start_raises_value_error():
+    with pytest.raises(ValueError):
+        SafetyEvent(
+            event_id="evt-1",
+            event_type="stopped_vehicle",
+            camera_id="cam-upstream",
+            track_id="cam-upstream:12",
+            window=(25.0, 10.0),
+            motion_space="world",
+            confidence_tier="medium",
+        )
+
+
+def test_safety_event_has_schema_version():
+    field_names = {f.name for f in dataclasses.fields(SafetyEvent)}
+    assert "schema_version" in field_names

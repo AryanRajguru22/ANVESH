@@ -69,6 +69,23 @@ is a single additive enum value -- `RANKED` and `INSUFFICIENT_EVIDENCE`
 are unchanged, no other field on any entity was touched, and no existing
 code path treated "high_conflict" as an invalid value to construct
 (verified against `tests/test_schemas.py` before making the change).
+
+M7 addition -- `SafetyEvent`: M7 (blueprint-external -- Part 5 has no
+safety-event concept at all) adds the first capability outside
+candidate-cause reasoning: persistent stopped-vehicle detection
+(`anvesh/safety/stopped_vehicle.py`). Its per-track diagnostic output
+(`StoppedVehicleClassification`) deliberately does NOT live here, in the
+same spirit as M3's `TrafficStateAggregation`/M4's `ReliabilityScore`
+(heuristic, non-probability diagnostics stay next to the code that
+produces them, not in the frozen contract). `SafetyEvent` is the one
+piece that IS schema-worthy: a small, generic, reusable record of "an
+event of some kind was detected," deliberately not named or shaped only
+for stopped vehicles -- `event_type` is a free-text field precisely so a
+future detector (still out of scope; none is implemented here) can reuse
+this same entity for a different kind of event without a further schema
+change. `motion_space` and `confidence_tier` reuse the existing enums
+above rather than introducing new ones. No existing entity or field was
+touched to add this.
 """
 
 from __future__ import annotations
@@ -488,3 +505,31 @@ class EvaluationRecord:
         if not isinstance(self.metrics, EvaluationMetrics):
             raise TypeError("metrics must be an EvaluationMetrics instance")
         object.__setattr__(self, "baseline", BaselineType(self.baseline))
+
+
+@dataclass(frozen=True)
+class SafetyEvent:
+    """A generic, reusable "an event of some kind was detected" record
+    (M7 addition -- see the module docstring's "M7 addition" note).
+    `event_type` is free-text on purpose so a future safety-event detector
+    can reuse this same entity without another schema change; M7 itself
+    only ever constructs one with `event_type="stopped_vehicle"`
+    (`anvesh/safety/stopped_vehicle.py:build_safety_event`)."""
+
+    event_id: str
+    event_type: str
+    camera_id: str
+    track_id: str
+    window: tuple
+    motion_space: MotionSpace
+    confidence_tier: ConfidenceTier
+    schema_version: str = "1.0.0"
+
+    def __post_init__(self) -> None:
+        _require_non_empty(self.event_id, "event_id")
+        _require_non_empty(self.event_type, "event_type")
+        _require_non_empty(self.camera_id, "camera_id")
+        _require_non_empty(self.track_id, "track_id")
+        _validate_window(self.window)
+        object.__setattr__(self, "motion_space", MotionSpace(self.motion_space))
+        object.__setattr__(self, "confidence_tier", ConfidenceTier(self.confidence_tier))

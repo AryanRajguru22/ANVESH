@@ -18,12 +18,29 @@ Part 3 module 2 and Part 16 ("camera calibration" risk).
 references `Camera.calibration_profile_id` as an opaque foreign key and
 never defines this table. This module owns the concrete type, per Part 3's
 module table ("world/calibration.py" -> `CalibrationProfile`).
+
+COMMIT 5 ADDITION (`ANVESH_LANE_SPEED_FORENSIC_AUDIT.md` SS4/SS11):
+`from_cityflow_homography`/`load_cityflow_calibration` ingest a SECOND,
+different kind of calibration input -- CityFlowV2's `calibration.txt`, an
+already-fitted 3x3 homography with no correspondence points at all, not a
+site survey. This is deliberately not routed through
+`fit_planar_homography` (which fits its own homography from points; it
+has none to fit from here). Two new explicit fields distinguish this from
+the MANUAL_SURVEY path everywhere above: `CalibrationProvenance` (who
+produced the homography) and `MetricValidationStatus` (whether the
+claimed output units have been independently confirmed against a known
+real-world distance -- NOT the same question as "is a homography
+present"). A CityFlow-supplied profile is CALIBRATED (a usable transform
+exists) but `metric_validation=UNVALIDATED` and `units="unknown"` until
+that separate check happens -- this is calibration INGESTION only; no
+such validation step exists anywhere in the codebase yet.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
 import numpy as np
 import cv2
@@ -32,6 +49,36 @@ import cv2
 class CalibrationStatus(str, Enum):
     UNCALIBRATED = "uncalibrated"
     CALIBRATED = "calibrated"
+
+
+class CalibrationProvenance(str, Enum):
+    """Where a CALIBRATED profile's homography actually came from --
+    distinct from `CalibrationStatus`, which only says whether a usable
+    transform exists at all. Added in Commit 5 (`ANVESH_LANE_SPEED_
+    FORENSIC_AUDIT.md` SS4.5/SS11) so a precomputed, externally-supplied
+    homography (e.g. CityFlowV2's `calibration.txt`) is never presented,
+    or silently treated, as if it were this project's own manually
+    surveyed fit."""
+
+    MANUAL_SURVEY = "manual_survey"  # fit_planar_homography, from real operator-supplied correspondences
+    CITYFLOW_SUPPLIED = "cityflow_supplied"  # from_cityflow_homography, an already-fitted external matrix
+    UNKNOWN = "unknown"  # no meaningful provenance (e.g. an UNCALIBRATED profile)
+
+
+class MetricValidationStatus(str, Enum):
+    """Whether a CALIBRATED profile's claimed output units (`units`, e.g.
+    "meters") have been independently confirmed against a known
+    real-world reference distance -- NOT whether the homography fit
+    itself converged. Added in Commit 5 so a precomputed external
+    homography (CityFlow) can never silently upgrade to "metric speed is
+    calibrated" just because a matrix exists; only an explicit,
+    independent validation step (not implemented anywhere yet) may set
+    `VALIDATED`. Downstream speed code (a later commit) must read this,
+    not just `CalibrationProfile.is_calibrated`, before presenting a
+    speed as confirmed-metric rather than approximate."""
+
+    VALIDATED = "validated"
+    UNVALIDATED = "unvalidated"
 
 
 @dataclass(frozen=True)
@@ -67,6 +114,8 @@ class CalibrationProfile:
     reprojection_error_m: object  # float; mean fit error on the reference points, or None if uncalibrated
     units: str = "meters"
     method: str = "manual_planar_homography_v1"
+    provenance: CalibrationProvenance = CalibrationProvenance.MANUAL_SURVEY
+    metric_validation: MetricValidationStatus = MetricValidationStatus.UNVALIDATED
 
     def __post_init__(self) -> None:
         if not self.calibration_profile_id:
@@ -74,12 +123,20 @@ class CalibrationProfile:
         if not self.camera_id:
             raise ValueError("camera_id must be a non-empty string")
         object.__setattr__(self, "status", CalibrationStatus(self.status))
+        object.__setattr__(self, "provenance", CalibrationProvenance(self.provenance))
+        object.__setattr__(self, "metric_validation", MetricValidationStatus(self.metric_validation))
 
         if self.status == CalibrationStatus.CALIBRATED:
             if self.homography is None or self.inverse_homography is None:
                 raise ValueError("a CALIBRATED profile must carry both homography and inverse_homography")
-            if len(self.reference_points) < 4:
-                raise ValueError("a CALIBRATED profile requires at least 4 reference points")
+            # The >=4 reference-point invariant only makes sense for a
+            # profile that claims to come from real surveyed
+            # correspondences (MANUAL_SURVEY). A CITYFLOW_SUPPLIED (or
+            # otherwise externally-sourced) profile honestly has none --
+            # requiring/fabricating points here would be exactly the
+            # fabrication requirement 1 (Commit 5) forbids.
+            if self.provenance == CalibrationProvenance.MANUAL_SURVEY and len(self.reference_points) < 4:
+                raise ValueError("a CALIBRATED MANUAL_SURVEY profile requires at least 4 reference points")
         else:
             if self.homography is not None or self.inverse_homography is not None:
                 raise ValueError("an UNCALIBRATED profile must not carry a homography")
@@ -159,6 +216,12 @@ def fit_planar_homography(
         homography=homography,
         inverse_homography=inverse_homography,
         reprojection_error_m=reprojection_error_m,
+        provenance=CalibrationProvenance.MANUAL_SURVEY,
+        # A real site survey supplies actual measured-metre world_xy
+        # values (CalibrationPoint's own docstring) -- the metric claim is
+        # validated by construction, unlike an externally-supplied,
+        # unverified homography (see from_cityflow_homography).
+        metric_validation=MetricValidationStatus.VALIDATED,
     )
 
 
@@ -180,4 +243,198 @@ def uncalibrated_profile(calibration_profile_id: str, camera_id: str) -> Calibra
         homography=None,
         inverse_homography=None,
         reprojection_error_m=None,
+        provenance=CalibrationProvenance.UNKNOWN,
+        metric_validation=MetricValidationStatus.UNVALIDATED,
+    )
+
+
+@dataclass(frozen=True)
+class CityFlowCalibrationData:
+    """Raw fields parsed from one CityFlowV2 `calibration.txt` file, before
+    they become a `CalibrationProfile`. Pure data, no validation beyond
+    what `parse_cityflow_calibration_text` already performs (shape/type
+    only) -- this is not itself a calibration profile and carries no
+    provenance/status opinion."""
+
+    homography: object  # 3x3 numpy array, exactly as parsed -- never rescaled or re-fit
+    reprojection_error: float
+    intrinsic_matrix: object  # 3x3 numpy array, or None if the file has no "Intrinsic parameter matrix:" line
+    distortion_coefficients: object  # tuple of floats, or None if the file has no "Distortion coefficients:" line
+
+
+def parse_cityflow_calibration_text(text: str) -> CityFlowCalibrationData:
+    """Parse CityFlowV2's `calibration.txt` format:
+
+        Homography matrix: a b c;d e f;g h i
+        Intrinsic parameter matrix: a b c;d e f;g h i    (optional)
+        Distortion coefficients: c0 c1 c2 c3             (optional)
+        Reprojection error: <float>
+
+    Each matrix line is 3 semicolon-separated rows of 3 whitespace-
+    separated floats (confirmed against the real files at
+    `E:\\traffic dataset\\validation\\S02\\{c006,c009}\\calibration.txt`,
+    and against `S05\\c035\\calibration.txt`, which is the only S02/S05
+    camera whose file actually carries the optional intrinsic/distortion
+    lines -- see Commit 5 notes in
+    `docs/LANE_SPEED_IMPLEMENTATION_NOTES.md`). The "Homography matrix"
+    values are returned exactly as parsed -- no rescaling, normalization,
+    or re-fitting (requirement 3, Commit 5).
+
+    Raises `ValueError` for a missing/malformed "Homography matrix:"
+    line, a malformed optional intrinsic-matrix/distortion-coefficients
+    line, a non-numeric value anywhere, or a missing/malformed
+    "Reprojection error:" line.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+
+    homography = None
+    intrinsic_matrix = None
+    distortion_coefficients = None
+    reprojection_error = None
+
+    for line in lines:
+        if line.startswith("Homography matrix:"):
+            homography = _parse_matrix_3x3(line[len("Homography matrix:"):])
+        elif line.startswith("Intrinsic parameter matrix:"):
+            intrinsic_matrix = _parse_matrix_3x3(line[len("Intrinsic parameter matrix:"):])
+        elif line.startswith("Distortion coefficients:"):
+            distortion_coefficients = tuple(_parse_float_list(line[len("Distortion coefficients:"):]))
+        elif line.startswith("Reprojection error:"):
+            reprojection_error = _parse_float(line[len("Reprojection error:"):])
+
+    if homography is None:
+        raise ValueError("CityFlow calibration text is missing a 'Homography matrix:' line")
+    if reprojection_error is None:
+        raise ValueError("CityFlow calibration text is missing a 'Reprojection error:' line")
+
+    return CityFlowCalibrationData(
+        homography=homography,
+        reprojection_error=reprojection_error,
+        intrinsic_matrix=intrinsic_matrix,
+        distortion_coefficients=distortion_coefficients,
+    )
+
+
+def _parse_matrix_3x3(raw: str) -> np.ndarray:
+    rows = raw.strip().split(";")
+    if len(rows) != 3:
+        raise ValueError(f"expected 3 semicolon-separated matrix rows, got {len(rows)}: {raw!r}")
+    values = []
+    for row in rows:
+        row_values = _parse_float_list(row)
+        if len(row_values) != 3:
+            raise ValueError(f"expected 3 values per matrix row, got {len(row_values)}: {row!r}")
+        values.append(row_values)
+    return np.array(values, dtype=np.float64)
+
+
+def _parse_float_list(raw: str) -> list:
+    tokens = raw.strip().split()
+    if not tokens:
+        raise ValueError("expected at least one numeric value, got an empty field")
+    return [_parse_float(tok) for tok in tokens]
+
+
+def _parse_float(raw: str) -> float:
+    try:
+        return float(raw.strip())
+    except ValueError as exc:
+        raise ValueError(f"expected a numeric value, got {raw!r}") from exc
+
+
+def from_cityflow_homography(
+    calibration_profile_id: str,
+    camera_id: str,
+    homography,
+    reprojection_error: float,
+) -> CalibrationProfile:
+    """Build a CALIBRATED `CalibrationProfile` from an already-fitted,
+    externally-supplied homography (e.g. CityFlowV2's `calibration.txt`,
+    via `parse_cityflow_calibration_text`), WITHOUT fabricating reference
+    -point correspondences the dataset never provided (requirement 1,
+    Commit 5) and WITHOUT asserting the output space is metres, GPS, or
+    any other physical unit (requirement 4) -- CityFlow's own
+    documentation does not establish that, and the forensic audit's own
+    numerical check (`ANVESH_LANE_SPEED_FORENSIC_AUDIT.md` SS4.3) found
+    the projected values are plausible-but-unconfirmed as some local
+    metric frame, never proven.
+
+    Always sets:
+      - `provenance=CalibrationProvenance.CITYFLOW_SUPPLIED` (never
+        `MANUAL_SURVEY` -- these are two different trust levels and must
+        never be conflated, requirement 5).
+      - `metric_validation=MetricValidationStatus.UNVALIDATED` (requirement
+        6 -- a precomputed external homography does not, by itself, make
+        ANVESH claim metric speed is calibrated; only an independent
+        check against a known real-world reference distance could move a
+        profile to VALIDATED, and no such check happens here or anywhere
+        in the codebase yet).
+      - `units="unknown"` (requirement 4 -- overrides `CalibrationProfile`
+        's own `"meters"` default, which is only appropriate for the
+        MANUAL_SURVEY path where a human supplied real-metre
+        correspondences).
+      - `reference_points=()` -- honestly empty; no correspondence points
+        exist for this provenance. `CalibrationProfile.__post_init__`'s
+        `>=4 reference points` invariant is relaxed specifically for
+        non-MANUAL_SURVEY provenance, so this is not a validation
+        loophole -- it is the documented exception.
+      - `method="cityflow_precomputed_v1"` (distinct from
+        `fit_planar_homography`'s `"manual_planar_homography_v1"`, so
+        provenance is legible even from `method` alone).
+
+    `reprojection_error` is stored, unmodified, into `reprojection_error_m`
+    -- the field name's "_m" suffix is inherited naming from the
+    MANUAL_SURVEY path and is NOT a units claim here; this value's actual
+    units are exactly as unvalidated as the homography's own output space
+    (see `units`/`metric_validation` above).
+
+    Raises `ValueError` if `homography` is not a 3x3 array of finite
+    numbers, or is singular (cannot be inverted) -- the only validation
+    performed; the values themselves are never rescaled or re-fit.
+    """
+    homography = np.asarray(homography, dtype=np.float64)
+    if homography.shape != (3, 3):
+        raise ValueError(f"homography must be a 3x3 matrix, got shape {homography.shape}")
+    if not np.all(np.isfinite(homography)):
+        raise ValueError("homography must contain only finite numbers")
+
+    try:
+        inverse_homography = np.linalg.inv(homography)
+    except np.linalg.LinAlgError as exc:
+        raise ValueError("supplied homography is singular and cannot be inverted") from exc
+
+    return CalibrationProfile(
+        calibration_profile_id=calibration_profile_id,
+        camera_id=camera_id,
+        status=CalibrationStatus.CALIBRATED,
+        reference_points=(),
+        homography=homography,
+        inverse_homography=inverse_homography,
+        reprojection_error_m=float(reprojection_error),
+        units="unknown",
+        method="cityflow_precomputed_v1",
+        provenance=CalibrationProvenance.CITYFLOW_SUPPLIED,
+        metric_validation=MetricValidationStatus.UNVALIDATED,
+    )
+
+
+def load_cityflow_calibration(calibration_profile_id: str, camera_id: str, path) -> CalibrationProfile:
+    """Read and parse one CityFlowV2 `calibration.txt` file and build a
+    `CalibrationProfile` from it (`parse_cityflow_calibration_text` +
+    `from_cityflow_homography`).
+
+    Raises `FileNotFoundError` if `path` does not exist, and `ValueError`
+    for anything `parse_cityflow_calibration_text`/
+    `from_cityflow_homography` already raise `ValueError` for.
+    """
+    calibration_path = Path(path)
+    if not calibration_path.is_file():
+        raise FileNotFoundError(f"CityFlow calibration file not found: {calibration_path}")
+
+    data = parse_cityflow_calibration_text(calibration_path.read_text())
+    return from_cityflow_homography(
+        calibration_profile_id=calibration_profile_id,
+        camera_id=camera_id,
+        homography=data.homography,
+        reprojection_error=data.reprojection_error,
     )

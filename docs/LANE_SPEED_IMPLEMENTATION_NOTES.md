@@ -454,3 +454,145 @@ every pre-existing test in this file is unmodified and still passes,
 demonstrating `TrackManager`'s existing tracking behavior (trajectory
 accumulation, occlusion-state transitions, track IDs, finalization) is
 unaffected by this commit.
+
+---
+
+## Commit 5 — Ingest CityFlow homography calibration (`anvesh/world/calibration.py`)
+
+**What changed:** Calibration ingestion only — no speed estimation, no
+lane-assignment change, no candidate-vehicle work, no dashboard change.
+Added `parse_cityflow_calibration_text`, `from_cityflow_homography`, and
+`load_cityflow_calibration` to `anvesh/world/calibration.py`, plus two new
+explicit-state enums (`CalibrationProvenance`, `MetricValidationStatus`)
+and two new `CalibrationProfile` fields (`provenance`, `metric_validation`,
+both with backward-compatible defaults). `fit_planar_homography` and
+`uncalibrated_profile` are unchanged in behavior — they now just tag
+themselves explicitly (`MANUAL_SURVEY`/`VALIDATED` and `UNKNOWN`/
+`UNVALIDATED` respectively) instead of leaving that implicit. Nothing
+outside `anvesh/world/calibration.py` was touched.
+
+### CityFlow calibration format
+
+Confirmed directly from the real files (not assumed from documentation):
+
+```
+Homography matrix: a b c;d e f;g h i
+Intrinsic parameter matrix: a b c;d e f;g h i    (optional)
+Distortion coefficients: c0 c1 c2 c3             (optional)
+Reprojection error: <float>
+```
+
+`E:\traffic dataset\validation\S02\c006\calibration.txt` and `...\c009\
+calibration.txt` (the showcase cameras) each carry only the "Homography
+matrix" and "Reprojection error" lines — no intrinsic matrix, no
+distortion coefficients. Scanning the rest of the validation set found
+exactly one camera, `S05\c035`, whose file carries the optional intrinsic
+-matrix/distortion-coefficients lines, confirming the parser needs to
+handle them even though neither showcase camera's file does.
+`parse_cityflow_calibration_text` parses all four fields (two required,
+two optional) from a plain string — no dependency on any specific file
+path, so it composes with `load_cityflow_calibration` (real file) or a
+fixture string (tests) identically.
+
+### How it enters ANVESH
+
+`load_cityflow_calibration(calibration_profile_id, camera_id, path)` reads
+a `calibration.txt` file, parses it, and calls `from_cityflow_homography`,
+which builds a `CALIBRATED` `CalibrationProfile` — the SAME type
+`fit_planar_homography` produces, so `is_calibrated`, `image_to_world`,
+and `world_to_image` all work identically regardless of which
+constructor built the profile. This was a deliberate choice: CityFlow's
+homography is not routed through `fit_planar_homography` itself (that
+function fits its own homography from correspondence points; CityFlow
+supplies neither points nor anything to fit — only an already-computed
+matrix), and no reference points are fabricated to satisfy the pre-
+existing `>=4 reference_points` invariant. That invariant
+(`CalibrationProfile.__post_init__`) now only applies when
+`provenance == CalibrationProvenance.MANUAL_SURVEY` — a CityFlow-supplied
+profile honestly carries `reference_points=()`.
+
+### What the homography does and does not establish
+
+**Does establish:** a genuinely usable image↔"world" projective transform
+— `from_cityflow_homography` preserves the 9 supplied values exactly (no
+rescaling, no re-fitting; verified byte-for-byte against the real c006/
+c009 files in `test_c006_homography_values_preserved_exactly`/
+`test_c009_...`), validates only shape (3×3) and numeric type (finite),
+computes the matrix inverse so `world_to_image` works, and stores
+CityFlow's own reported reprojection error unmodified.
+
+**Does NOT establish:** that the output space is metres, GPS coordinates,
+or any other physical unit. CityFlow's own documentation does not state
+this, and the forensic audit's own numerical check
+(`ANVESH_LANE_SPEED_FORENSIC_AUDIT.md` §4.3) found the projected values
+are plausible-but-unconfirmed as some local metric frame (values in the
+low thousands, not GPS-decimal-degree scale; reprojection errors of
+~7–10 are plausible as metres-scale residuals but not proven) — "weakly
+supports... but is not proof." `from_cityflow_homography` therefore
+always sets `units="unknown"`, overriding `CalibrationProfile`'s own
+`"meters"` default (which is only correct for the `MANUAL_SURVEY` path,
+where a human supplied real measured-metre correspondences). The
+`reprojection_error_m` field's "_m" suffix is inherited naming from that
+same MANUAL_SURVEY path — for a CityFlow-supplied profile it is NOT a
+units claim; that residual's real units are exactly as unvalidated as
+everything else about this homography.
+
+### Provenance
+
+`CalibrationProvenance` (new enum): `MANUAL_SURVEY` (site-survey
+correspondences, `fit_planar_homography`), `CITYFLOW_SUPPLIED`
+(precomputed external matrix, `from_cityflow_homography`), `UNKNOWN` (no
+meaningful provenance — `uncalibrated_profile`). Every existing
+`CalibrationProfile` constructor now sets this explicitly; the dataclass
+field itself defaults to `MANUAL_SURVEY` only for backward compatibility
+with direct construction (existing tests construct `CalibrationProfile`
+by hand without passing it). `method` (the existing free-text field) is
+unchanged and complementary: `provenance` is the coarse, programmatically
+-branchable category; `method` stays the more detailed algorithm/version
+tag (`"cityflow_precomputed_v1"` vs `"manual_planar_homography_v1"`).
+
+### Why speed remains approximate until independently validated
+
+`MetricValidationStatus` (new enum): `VALIDATED` / `UNVALIDATED` — a
+SEPARATE question from `CalibrationStatus`/`is_calibrated` ("does a usable
+transform exist") and from `provenance` ("who produced it"). It answers:
+has the claimed output-unit interpretation been independently confirmed
+against a known real-world reference distance (e.g. a measured lane
+width)? `fit_planar_homography` sets `VALIDATED` — a real survey's
+correspondence points already are measured-metre distances, so the metric
+claim is validated by construction. `from_cityflow_homography` always
+sets `UNVALIDATED`, unconditionally — there is no parameter to override
+this at ingestion time, deliberately: requirement 6 is that a precomputed
+homography existing must never, by itself, upgrade ANVESH's confidence to
+"metric speed is calibrated." No independent validation step (checking a
+known lane width or similar against this homography's own output) exists
+anywhere in the codebase yet — that remains explicitly future work. A
+later speed-estimation commit must read `metric_validation`, not just
+`is_calibrated`, before presenting a speed as confirmed-metric rather than
+approximate (audit §8.2's `is_approximate`/`SpeedConfidence` design).
+
+### Tests added
+
+`tests/world/test_calibration.py` (extended, +24 tests, all 11
+pre-existing tests unmodified and still passing): parsing the real c006
+and c009 calibration text (embedded as fixture strings, not read from the
+16GB dataset — requirement 9) including exact byte-for-byte homography
+preservation and reprojection-error parsing; parsing the one file in the
+validation set that has the optional intrinsic-matrix/distortion
+-coefficients lines; six malformed-input cases (missing homography line,
+missing reprojection-error line, wrong row count, wrong column count, a
+non-numeric homography value, a non-numeric reprojection error) each
+raising `ValueError`; provenance/units/metric_validation correctly marked
+for a CityFlow-supplied profile (and explicitly asserted `!= "meters"` /
+`!= VALIDATED`, not just checked for a new value); the ingested
+homography actually projects and round-trips via the existing
+`image_to_world`/`world_to_image` methods; malformed-homography rejection
+(non-3×3 shape, non-finite values, singular matrix); `load_cityflow_
+calibration` reading a real file (via `tmp_path`, still no dependency on
+the mounted dataset) and raising `FileNotFoundError` for a missing one; a
+CityFlow-provenance profile with zero reference points constructing
+without error; and three "existing workflows unchanged" tests —
+`fit_planar_homography` is now explicitly `MANUAL_SURVEY`/`VALIDATED`,
+`uncalibrated_profile` is explicitly `UNKNOWN`, and the original `>=4
+reference points` invariant still rejects a `MANUAL_SURVEY` profile with
+too few points.

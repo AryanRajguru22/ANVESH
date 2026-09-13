@@ -3,7 +3,17 @@ bookkeeping, deliberately independent of *how* track IDs are assigned.
 
 Given a stream of `TrackedDetection`s (from any `Tracker` implementation),
 this module owns:
-  - trajectory accumulation (image-space (x, y, timestamp) samples)
+  - trajectory accumulation (image-space (x, y, timestamp) samples, from
+    each detection's `centroid` -- unchanged since M1)
+  - a parallel ground-point trajectory (Commit 4, `ANVESH_LANE_SPEED_
+    FORENSIC_AUDIT.md` SS11): the same per-frame samples, but from each
+    detection's `ground_point` (bottom-center) instead of `centroid`. Purely
+    additive -- `trajectory` and everything derived from it (speed,
+    position_history) is unchanged; `ground_point_trajectory` exists only
+    so lane assignment (`anvesh.perception.lane_assignment`) can be
+    computed per observation without recomputing tracking. See that
+    module for why lane assignment needs the ground point, not the
+    centroid.
   - track age (first_seen / last_seen)
   - the visible/partial/lost occlusion state, driven by consecutive missed
     frames -- this is the "handling of temporary missed detections":
@@ -27,6 +37,7 @@ class TrackState:
     last_seen: float
     occlusion_state: OcclusionState
     trajectory: list = field(default_factory=list)
+    ground_point_trajectory: list = field(default_factory=list)
     consecutive_missed_frames: int = 0
     is_finished: bool = False
 
@@ -62,6 +73,7 @@ class TrackManager:
         for td in tracked_detections:
             seen_ids.add(td.track_id)
             centroid = td.detection.centroid
+            ground_point = td.detection.ground_point
             state = self._active.get(td.track_id)
             if state is None:
                 state = TrackState(
@@ -71,6 +83,7 @@ class TrackManager:
                     last_seen=timestamp,
                     occlusion_state=OcclusionState.VISIBLE,
                     trajectory=[(centroid[0], centroid[1], timestamp)],
+                    ground_point_trajectory=[(ground_point[0], ground_point[1], timestamp)],
                 )
                 self._active[td.track_id] = state
             else:
@@ -78,6 +91,7 @@ class TrackManager:
                 state.consecutive_missed_frames = 0
                 state.occlusion_state = OcclusionState.VISIBLE
                 state.trajectory.append((centroid[0], centroid[1], timestamp))
+                state.ground_point_trajectory.append((ground_point[0], ground_point[1], timestamp))
 
         for track_id, state in list(self._active.items()):
             if track_id in seen_ids:

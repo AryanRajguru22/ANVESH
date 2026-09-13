@@ -38,6 +38,20 @@ def test_trajectory_accumulates_across_frames():
     assert state.age_seconds == 0.2
 
 
+def test_ground_point_trajectory_accumulates_alongside_centroid_trajectory():
+    """Commit 4 addition: a parallel ground-point (bottom-center) history,
+    additive to the unchanged centroid `trajectory` -- `_tracked` builds a
+    5x5 box around (x, y), so centroid == (x, y) and ground_point ==
+    (x, y + 5)."""
+    manager = TrackManager(max_missed_frames=3, partial_after_missed_frames=1)
+    manager.update(0.0, [_tracked("1", 10.0, 10.0, 0.0, 0)])
+    manager.update(0.1, [_tracked("1", 12.0, 10.0, 0.1, 1)])
+
+    state = manager.active_tracks["1"]
+    assert state.trajectory == [(10.0, 10.0, 0.0), (12.0, 10.0, 0.1)]
+    assert state.ground_point_trajectory == [(10.0, 15.0, 0.0), (12.0, 15.0, 0.1)]
+
+
 def test_temporary_miss_marks_partial_not_lost():
     manager = TrackManager(max_missed_frames=3, partial_after_missed_frames=1)
     manager.update(0.0, [_tracked("1", 10.0, 10.0, 0.0, 0)])

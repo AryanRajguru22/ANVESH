@@ -316,3 +316,141 @@ config's regions plug directly into Commit 2's `assign_lane` (an interior
 point resolves `ASSIGNED`/`L1`, a far-outside point resolves
 `UNKNOWN_OUTSIDE_REGIONS`) — still no pipeline wiring, just proof the two
 commits work together.
+
+---
+
+## Commit 4 — Wire vehicle lane assignment (`anvesh/perception/lane_assignment.py`)
+
+**What changed:** Added a new module, `anvesh/perception/lane_assignment.py`,
+that composes Commit 1 (`RawDetection.ground_point`), Commit 2
+(`world.lane_geometry.assign_lane`), and Commit 3 (`world.lane_config.
+load_lane_config`) against real perception/tracking objects:
+`assign_detection_lane(detection, regions)` for a single observation, and
+`build_track_lane_history(camera_id, state, regions)` for a whole track's
+per-observation history (`TrackLaneHistory`, a tuple of
+`LaneAssignmentSample`). `anvesh/perception/track_manager.py` gained one
+additive field, `TrackState.ground_point_trajectory` — the same per-frame
+samples as the existing `trajectory`, but from each detection's
+`ground_point` instead of `centroid` — populated alongside (never
+replacing) the existing trajectory in `TrackManager.update()`. Nothing
+else changed: `schema_conversion.py`, `storage/schemas.py`,
+`perception/pipeline.py`, `anvesh/pipeline.py`, and every export/dashboard
+script are untouched by this commit.
+
+### How lane assignment is computed
+
+Per observation, not per track: `assign_detection_lane` takes one
+`RawDetection` and a camera's lane `regions` and returns exactly what
+`assign_lane(detection.ground_point, regions)` returns — a pure, stateless
+call with no caching. `build_track_lane_history` applies this
+independently to every sample in a track's `ground_point_trajectory`,
+producing one `LaneAssignmentSample` (timestamp + `LaneAssignmentResult`)
+per frame the track was observed in. This directly answers design question
+6 (audit-adjacent, this commit's own instructions): lane assignment is
+calculated **per raw detection and propagated into the track's history**,
+never computed once (e.g. from the track's first or "current" observation)
+and carried forward — a vehicle that changes lanes mid-track shows that
+transition across `samples`, rather than presenting a stale first-seen
+lane as if it still applied. No lane-*change* detection (comparing
+consecutive samples to flag a transition) is implemented here — this
+commit only makes the raw per-frame history available; a future commit can
+compare consecutive `samples` to detect a change.
+
+### Why bottom-center (ground_point), not centroid
+
+Unchanged from the Commit 1 rationale, now actually exercised for the
+first time: `centroid` (box center) sits above the road plane for any
+vehicle taller than it is wide in screen space, drifting toward the
+camera relative to where the vehicle's wheels actually meet the road —
+exactly the wrong point to test against lane paint that exists *on* the
+road surface. `assign_detection_lane` uses `detection.ground_point`
+exclusively; `tests/perception/test_lane_assignment.py::
+test_ground_point_not_centroid_determines_assignment` constructs a tall
+box whose `ground_point` falls inside a lane region while its `centroid`
+falls outside it, and asserts the two source points give different
+`LaneAssignmentResult`s — a regression guard against ever swapping the
+attribute this module reads.
+
+### Meaning of UNKNOWN / AMBIGUOUS (unchanged from Commit 2, now reachable end-to-end)
+
+`assign_detection_lane`/`build_track_lane_history` return exactly the
+`LaneAssignmentStatus` Commit 2 defined — `ASSIGNED`, `AMBIGUOUS`,
+`UNKNOWN_NO_GEOMETRY`, `UNKNOWN_OUTSIDE_REGIONS`, `INVALID_GEOMETRY` — with
+no translation, defaulting, or collapsing step in between. Nothing in this
+commit ever substitutes a guessed lane ID for a non-`ASSIGNED` status: a
+vehicle outside every configured region, on/near a shared boundary, in a
+camera with no lane config, or facing an internally inconsistent region
+set all surface as their own explicit status, exactly as Commit 2
+guarantees, all the way out to `LaneAssignmentSample.result`.
+
+### Where this attaches (and where it deliberately doesn't)
+
+Lane assignment is a new, non-schema companion representation
+(`TrackLaneHistory`), the same pattern `EvidenceItem`,
+`StoppedVehicleClassification`, and `CorridorStateAssembly` already use —
+per the audit §9's explicit recommendation not to fold a derived
+diagnostic into a frozen Part 5 schema. `storage.schemas.VehicleTrack` is
+untouched: it carries no `lane_id` or `lane_assignment` field, and
+`schema_conversion.build_vehicle_track`'s output is asserted identical
+whether or not `TrackState.ground_point_trajectory` is populated
+(`test_existing_schema_conversion_behavior_is_unchanged_by_ground_point_
+trajectory`). `build_track_lane_history` mirrors `build_vehicle_track`'s
+`f"{camera_id}:{state.track_id}"` track-ID convention so the two outputs
+describing the same track are trivially joinable by ID later, without
+either one depending on the other.
+
+This commit does not wire either function into `perception/pipeline.py`'s
+`run_m1_pipeline` loop or the top-level `anvesh/pipeline.py` orchestrator
+— both call sites are left for a later commit (and, independently, both
+files already carry unrelated in-progress changes in the working tree
+that this commit does not touch). `TrackManager.update()`'s new
+`ground_point_trajectory` bookkeeping is unconditional (always populated,
+no lane-config dependency), keeping `TrackManager` itself lane-agnostic —
+exactly the property the audit's own §3.6 discussion wanted preserved.
+
+### Limitations of the current one-lane-per-camera showcase configuration
+
+Carried over from Commit 3, worth restating now that lane assignment is
+actually reachable: both `configs/lanes/s02_c006.toml` and `s02_c009.toml`
+define exactly one lane (`L1`) each. This means, for the showcase corridor
+as currently configured:
+
+- Every `ASSIGNED` result for either camera will always name `L1` — there
+  is no second lane to be `AMBIGUOUS` against in practice, so
+  `AMBIGUOUS`/multi-lane behavior is only exercised by synthetic
+  fixtures in tests, not by anything the real c006/c009 configs can
+  currently produce.
+- A vehicle in either flanking turn pocket, the far-side carriageway, or
+  the intersection apron beyond each `L1` polygon's near boundary will
+  resolve to `UNKNOWN_OUTSIDE_REGIONS` — an honest "not on our one mapped
+  lane," not a claim that the vehicle is off-road.
+- Ground-point-based assignment inherits every limitation `RawDetection.
+  ground_point` already documents (2D image-space proxy only, biased by
+  occlusion, no vehicle-orientation awareness) and every limitation the
+  Commit 3 configs document (hand-measured single-frame approximation,
+  invalidated silently by any camera reframing).
+
+### Tests added
+
+`tests/perception/test_lane_assignment.py` (new file, 8 tests): a vehicle
+clearly inside c006 `L1` and c009 `L1` (using the real Commit 3 configs)
+both resolve `ASSIGNED`; a vehicle outside all regions resolves
+`UNKNOWN_OUTSIDE_REGIONS`; a ground point exactly on a shared boundary
+between two synthetic lanes resolves `AMBIGUOUS`; a tall box whose
+`ground_point` and `centroid` disagree confirms `ground_point` (not
+`centroid`) drives the result; lane assignment composes with
+`schema_conversion.build_vehicle_track` on the same `TrackState` without
+altering the frozen `VehicleTrack` it produces (schema is asserted
+unchanged, both structurally and value-for-value, with and without
+`ground_point_trajectory` populated); and one full integration test
+(requirement 14) driving a `RawDetection` through `TrackedDetection` →
+`TrackManager.update()` → `build_track_lane_history`, against the real
+c006 config, asserting the resulting `TrackLaneHistory` names `L1`.
+
+`tests/perception/test_track_manager.py` (extended, +1 test): confirms
+`ground_point_trajectory` accumulates the bottom-center point per frame,
+independently of and alongside the unchanged centroid `trajectory` —
+every pre-existing test in this file is unmodified and still passes,
+demonstrating `TrackManager`'s existing tracking behavior (trajectory
+accumulation, occlusion-state transitions, track IDs, finalization) is
+unaffected by this commit.

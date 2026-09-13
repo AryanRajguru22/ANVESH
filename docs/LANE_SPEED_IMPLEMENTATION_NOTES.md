@@ -777,3 +777,132 @@ integration test (requirement 13) driving a `RawDetection` through
 `TrackedDetection` → `TrackManager.update()` →
 `estimate_vehicle_speed`, against a CityFlow-style profile, asserting the
 resulting estimate is `OK`/`APPROXIMATE` with the expected km/h value.
+
+---
+
+## Commit 7 — Resolve evidence-backed candidate vehicle (`anvesh/hypotheses/candidate_vehicle.py`)
+
+**What changed:** Candidate-vehicle resolution only — no dashboard change,
+no bounding-box rendering, no red highlighting, no speed-estimation change,
+no lane-assignment change, no evidence-scoring change, no hypothesis
+-ranking math change, no propagation change, no ANVESH-V0 change, no
+CityFlow dataset change. Added one new module, `anvesh/hypotheses/
+candidate_vehicle.py`: `CandidateVehicleStatus` (a four-state enum),
+`CandidateVehicleResolution` (a frozen, non-schema companion result — the
+same pattern as `EvidenceItem`, `StoppedVehicleClassification`,
+`CorridorStateAssembly`), and `resolve_candidate_vehicle(ranking,
+evidence_by_camera) -> CandidateVehicleResolution`. Nothing outside this
+module was touched; it is not called from `anvesh/pipeline.py`,
+`scripts/export_ui_data.py`, or the dashboard anywhere — that wiring is
+explicitly deferred (audit §11, plan Commit 8+).
+
+### Why hypothesis ranking and vehicle selection are separate
+
+`hypotheses/ranking.py` ranks *cause categories* (H1-H6) from fused
+Dempster-Shafer belief/plausibility — it has no concept of an individual
+vehicle at all, by design (see that module's own docstring: "never a
+probability," "ranking must be allowed to abstain"). A real `track_id`
+enters the evidence model in exactly one place, `Evidence.
+supporting_track_refs` (`storage/schemas.py`), and only two of the six
+evidence builders ever populate it — `evidence_builder.py`'s `_evidence_h2`
+(exactly one stopped track) and `_evidence_h3` (two or more). Folding
+vehicle selection into the ranking math itself would force every
+hypothesis to either fabricate a vehicle it has no evidence for, or make
+"no vehicle" implicit and therefore easy to get silently wrong. Keeping
+them as two separate, composable steps — rank the cause, THEN ask what
+vehicle (if any) that specific cause's OWN evidence names — makes both
+steps independently correct and independently testable, and matches the
+project's existing convention of layering diagnostics (`EvidenceItem`,
+`StoppedVehicleClassification`) on top of frozen schema results rather
+than mutating them.
+
+### When a vehicle can legitimately be highlighted
+
+Only when `resolve_candidate_vehicle` returns `RESOLVED`: the top-ranked
+hypothesis's own `supporting_evidence_refs`, traced back through the
+supplied `evidence_by_camera` to each referenced `Evidence.
+supporting_track_refs`, name the union of exactly one distinct `track_id`.
+The resolver never selects a vehicle by any generic property not already
+present in that evidence — not closest-to-camera, not fastest, not
+stopped, not first-in-list, not highest track ID, not visually prominent —
+only what the winning hypothesis's own evidence already names. This is
+mechanical, not a heuristic: `resolve_candidate_vehicle` performs a lookup
+and a set union, nothing else.
+
+### Why H1/H5/H6 may have no vehicle candidate
+
+H1 (downstream bottleneck), H5 (upstream demand surge), and H6
+(signal/intersection restriction) describe traffic/system conditions, not
+one vehicle's behavior — `evidence_builder.py` never attaches
+`supporting_track_refs` to any of their evidence (H1 is about occupancy,
+H5 about aggregate flow rate, H6 always `NONE`-completeness in V1). When
+one of these wins the ranking, `resolve_candidate_vehicle` correctly
+returns `NO_VEHICLE_FOR_HYPOTHESIS` — this is the expected, honest outcome
+for these three hypotheses, not a bug or a gap to "fix" by inventing a
+vehicle. H2 (single stopped vehicle) and H3 (multiple stopped vehicles)
+are the only hypotheses whose evidence can currently name a vehicle at
+all.
+
+### Meaning of `AMBIGUOUS` / `NO_VEHICLE_FOR_HYPOTHESIS` / `NOT_RANKED`
+
+- **`RESOLVED`** — the top hypothesis's supporting evidence names exactly
+  one `track_id`. `track_id` is set; this is the only status a future
+  red-highlight step should ever act on.
+- **`AMBIGUOUS`** — the top hypothesis's supporting evidence names more
+  than one distinct `track_id` (e.g. H3 with several stopped vehicles, or
+  two cameras each naming a different vehicle for the same hypothesis).
+  `track_id` stays `None`; `candidate_track_ids` lists every vehicle
+  considered. Picking one of them arbitrarily would itself be a
+  fabrication the evidence does not support — this status exists
+  specifically to make that fabrication structurally impossible.
+- **`NO_VEHICLE_FOR_HYPOTHESIS`** — the top hypothesis's supporting
+  evidence names no vehicle at all (expected for H1/H5/H6; also possible
+  for H2/H3 if their own evidence happened to carry no track refs, or if
+  a referenced `evidence_id` is absent from the supplied
+  `evidence_by_camera`). Only the TOP-ranked entry is ever consulted — a
+  lower-ranked hypothesis's vehicle reference is never surfaced as a
+  substitute, even when it exists (`test_only_top_ranked_hypothesis_is_
+  ever_consulted`).
+- **`NOT_RANKED`** — `ranking.outcome != CandidateOutcome.RANKED` (the
+  fusion engine itself hit `HIGH_CONFLICT` or `INSUFFICIENT_EVIDENCE` and
+  abstained) or `ranked_list` is empty. No vehicle should ever be
+  highlighted when the ranking engine itself did not commit to a top
+  hypothesis.
+
+### Why candidate selection is not causal or legal responsibility
+
+`CandidateVehicleResolution` carries `belief`/`plausibility` through
+completely unchanged from the winning `RankedHypothesisEntry` — this
+module performs no additional math on them, and in particular never
+converts a Dempster-Shafer belief/plausibility pair into a probability (or
+any other single number) "of vehicle responsibility." That would smuggle
+in a claim (how confident are we THIS VEHICLE caused the congestion) the
+underlying evidence was never scored to support (the evidence model scores
+hypothesis *categories*, not individual-vehicle culpability). The result
+this module returns is best read as "the highest-ranked cause hypothesis
+currently has this vehicle as its evidence-named candidate," never
+"this vehicle is the confirmed cause" — the four-state status (rather than
+a single always-present `track_id` field) exists specifically so no caller
+can collapse that distinction by accident.
+
+### Tests added
+
+`tests/hypotheses/test_candidate_vehicle.py` (new file, 17 tests): one per
+required outcome — `RESOLVED` for a single-vehicle H2 and a single-vehicle
+H3; `AMBIGUOUS` for two equally-supported vehicles named by one evidence
+item and by two separate evidence items across cameras; `NO_VEHICLE_FOR_
+HYPOTHESIS` for each of H1/H5/H6 winning with no vehicle reference, and for
+a winning hypothesis with no supporting evidence at all; `NOT_RANKED` for
+both `HIGH_CONFLICT` and `INSUFFICIENT_EVIDENCE` outcomes and for an empty
+`ranked_list`; a lower-ranked hypothesis's vehicle reference is never
+surfaced when the winner has none; a resolved `track_id` is always exactly
+one already present in the input `Evidence.supporting_track_refs`, and a
+`supporting_evidence_refs` entry absent from the supplied
+`evidence_by_camera` is never fabricated into a track; `belief`/
+`plausibility` are asserted equal (not merely close, not renormalized) to
+the winning entry's own values. One integration test drives a real
+`VehicleTrack` through `aggregate_traffic_state` → `build_evidence_for_
+camera` → `single_camera_result` → `build_ranking` → `resolve_candidate_
+vehicle`, asserting H2 wins and resolves to the real track's ID; a second
+integration test confirms an all-`INSUFFICIENT` evidence set abstains
+(`INSUFFICIENT_EVIDENCE`) and resolves to `NOT_RANKED`.

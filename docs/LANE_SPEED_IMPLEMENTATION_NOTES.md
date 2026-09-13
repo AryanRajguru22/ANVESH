@@ -780,6 +780,238 @@ resulting estimate is `OK`/`APPROXIMATE` with the expected km/h value.
 
 ---
 
+## Commit 8 — Visualize lanes, speed, and candidate vehicle (`anvesh/rendering.py`)
+
+**What changed:** Visualization/output integration only — no evidence or
+ranking math change, no candidate-resolution logic change, no lane
+-geometry change, no speed-math change, no ANVESH-V0 change, no CityFlow
+-dataset change, no ML lane segmentation, no change to existing
+safety-event semantics. Added one new top-level module, `anvesh/
+rendering.py`, that draws three already-computed result types onto video
+frames: `world.lane_geometry.LaneAssignmentResult` (Commit 2/4),
+`perception.speed_estimation.VehicleSpeedEstimate` (Commit 6), and
+`hypotheses.candidate_vehicle.CandidateVehicleResolution` (Commit 7).
+`anvesh/perception/visualize.py`'s pre-existing `draw_frame` (used by
+`anvesh/perception/pipeline.py`'s per-frame M1 tracking loop) is
+completely untouched — not one line of that file changed. `rendering.py`
+is not called from `anvesh/pipeline.py`, `anvesh/perception/pipeline.py`,
+or any script by this commit; wiring it into a live pipeline run (and
+running the real c006/c009 showcase footage through it) is explicitly
+deferred, per this commit's own scope.
+
+### Why a new module instead of extending `visualize.py` in place
+
+`draw_frame` already has a real caller (`perception/pipeline.py`'s M1
+loop) that only has frame-by-frame detection/tracking data available —
+lane assignment, speed estimation, and candidate resolution all need
+track-lifetime, cross-camera, or window-level information `draw_frame`'s
+call site does not have. Changing `draw_frame`'s signature or behavior to
+accommodate the new fields would force that caller to either fabricate
+data it doesn't have or be rewritten as part of what was scoped as a
+visualization-only commit. A second, additive function
+(`render_annotated_frame`) sidesteps that entirely: `draw_frame` keeps
+its exact existing contract and behavior (verified directly —
+`tests/perception/test_visualize.py`, new in this commit, since the
+function had no dedicated test file before), and the richer overlay is
+opt-in for whatever future caller assembles the additional per-track
+data. `rendering.py` lives at the top level (alongside `anvesh/
+pipeline.py`), not inside `anvesh/perception/`, because it composes
+across `perception`, `world`, and `hypotheses` — importing `hypotheses.
+candidate_vehicle` from inside `anvesh/perception/` would invert the
+codebase's existing layering (nothing under `anvesh/perception/`
+currently imports from `evidence`, `hypotheses`, or `fusion`).
+
+### Visualization semantics: rendering never re-decides anything
+
+`render_annotated_frame` and every helper in `rendering.py` (`format_
+lane_text`, `format_speed_text`, `format_vehicle_label`, `is_resolved_
+candidate`, `ambiguity_banner_text`) only ever reads fields off an
+already-computed result object — a `LaneAssignmentResult`, a
+`VehicleSpeedEstimate`, or a `CandidateVehicleResolution` — and never
+recomputes, re-scores, or second-guesses any of them (design requirement
+10). In particular, `is_resolved_candidate(camera_id, track_id,
+resolution)` is a single string comparison (`resolution.track_id ==
+f"{camera_id}:{track_id}"`) gated on `resolution.status ==
+CandidateVehicleStatus.RESOLVED` — it does not look at the vehicle's own
+speed, position, class, or track age to decide anything. This means a bug
+in this module can only misdraw a result it was given; it can never
+change which vehicle ends up as the highest-ranked candidate.
+
+### Red candidate semantics
+
+The video overlay reuses the dashboard's EXISTING red-highlight
+convention rather than inventing a second one: `_CANDIDATE_HIGHLIGHT_
+COLOR = (68, 68, 239)` (BGR) is the direct translation of `ui/live/
+anvesh_live_dashboard.html`'s `#ef4444` (`flagged`/safety-event styling,
+RGB `(239, 68, 68)`) into OpenCV's channel order — the same red, not a
+new one, satisfying design requirement 9. A vehicle is colored this red
+if and only if `resolve_candidate_vehicle(...)` (Commit 7, called
+elsewhere and passed in unmodified) returned `status ==
+CandidateVehicleStatus.RESOLVED` and named that specific vehicle. Its
+label is decorated with `" (Highest-ranked candidate)"` — never
+"culprit", "responsible vehicle", or "confirmed vehicle" (design
+requirement 3; `test_candidate_label_never_uses_culprit_or_confirmed_
+wording` asserts this directly against the forbidden words). Never a
+hard-coded `track_id`: `test_red_highlight_moves_when_resolution_changes`
+renders the same two tracked vehicles against two different
+`CandidateVehicleResolution`s and confirms the red box moves to match
+whichever `track_id` the second resolution names — the highlight is a
+pure function of the resolution passed in, nothing else.
+
+### Ambiguity / abstention behavior
+
+- **`AMBIGUOUS`**: no vehicle is ever arbitrarily colored red — every
+  vehicle in the frame stays the normal (green) box color, and a
+  separate, explicit AMBER banner line (`_AMBIGUOUS_BANNER_COLOR = (0,
+  165, 255)`, deliberately never red) names every candidate `track_id`
+  under consideration (design requirement 4: "represent the ambiguity
+  explicitly", never silently pick one).
+- **`NO_VEHICLE_FOR_HYPOTHESIS`**: no red vehicle, no banner — the honest
+  "this cause isn't about one vehicle" case (expected for H1/H5/H6, see
+  Commit 7's own notes above) renders exactly like an ordinary window
+  with no candidate.
+- **`NOT_RANKED`** (or `candidate_resolution=None` entirely, e.g. a
+  caller that has not computed one yet): no red vehicle, no banner —
+  nothing should ever be highlighted when the ranking engine itself did
+  not commit to a top hypothesis, or when no resolution was supplied at
+  all.
+
+### Lane display
+
+`render_annotated_frame` draws ONLY the `LaneRegion`s it is explicitly
+given (`lane_regions` parameter) — it has no independent notion of "the
+road" and cannot draw or label a region it was not handed, so an excluded
+region (a turn pocket, the far-side carriageway — see Commit 3's own
+"regions deliberately excluded" notes) that was never included in a
+camera's lane config in the first place is never drawn or implied to have
+a lane assignment either (design requirement 2; `test_only_configured_
+lane_regions_are_drawn` confirms a location that would fall inside such
+an excluded region, were one configured, receives no lane color when it
+is simply never passed in).
+
+Per-vehicle lane text follows design requirement 8 exactly, via `format_
+lane_text`:
+
+| `LaneAssignmentStatus` | Displayed text |
+|---|---|
+| `ASSIGNED` | the bare `lane_id` (e.g. `"L1"`) |
+| `AMBIGUOUS` | `"Lane ?"` |
+| `UNKNOWN_OUTSIDE_REGIONS` | `"Lane —"` |
+| `UNKNOWN_NO_GEOMETRY` | `"Lane —"` |
+| `INVALID_GEOMETRY` | `"Lane ?"` |
+| no result supplied at all (`None`) | field omitted entirely |
+
+Never a guessed lane name for any of the four non-`ASSIGNED` statuses —
+each renders its own explicit marker, exactly as `world.lane_geometry`
+and `perception.lane_assignment` already guarantee upstream.
+
+### Approximate speed display
+
+`format_speed_text` rounds to the nearest whole km/h (`round(...)`,
+never a raw float — `test_speed_text_never_shows_excessive_decimal_
+precision` asserts `34.284719` renders as `"~34 km/h (approx.)"`, never
+`"34.28 km/h"`) and appends `"(approx.)"` if and only if `confidence ==
+SpeedConfidence.APPROXIMATE` — exactly the case Commit 6 established for
+every CityFlow-sourced (`CITYFLOW_SUPPLIED`/`UNVALIDATED`) camera, which
+is both showcase cameras today. A `VALIDATED` speed (hypothetically, a
+`MANUAL_SURVEY`-calibrated camera) renders without the `"(approx.)"`
+caveat, since that wording exists specifically to carry forward the
+CityFlow-unvalidated-homography warning, not as a blanket disclaimer.
+`confidence == UNAVAILABLE` renders the explicit `"speed —"` marker
+(design requirement 7's "explicit unavailable state" option) rather than
+silently vanishing indistinguishably from "no estimate was even
+attempted for this vehicle", which instead omits the speed segment from
+the label entirely (`speed_estimate=None`) — two different situations,
+two different renderings, per `test_speed_unavailable_is_shown_
+explicitly_not_silently_dropped` and `test_speed_omitted_entirely_when_
+no_estimate_supplied_at_all`.
+
+### Lane and speed are independent of candidate highlighting
+
+`format_vehicle_label`'s `lane_text`/`speed_text` segments and its
+`is_candidate` decoration are three independent parameters — nothing in
+`render_annotated_frame` ties whether a vehicle's lane/speed are shown to
+whether it happens to be the resolved candidate (design requirement 6;
+`test_lane_and_speed_labels_are_independent_of_candidate_status` builds
+the identical lane/speed segments for both an `is_candidate=True` and
+`is_candidate=False` label and asserts only the trailing marker differs).
+A normal, non-highlighted vehicle can carry a full `"L1 | ~35 km/h
+(approx.)"` label exactly like a highlighted one.
+
+### Why candidate selection is not causal or legal responsibility (rendering layer)
+
+Unchanged from Commit 7's own rationale, now visible in the rendered
+output too: the only thing distinguishing a `RESOLVED` vehicle on screen
+is its color and an explicit `"(Highest-ranked candidate)"` label
+suffix — never a percentage, a "confidence" bar, or any other device that
+would read as a probability of responsibility. `render_annotated_frame`
+does not compute or display anything derived from `belief`/
+`plausibility` at all; those remain internal to `CandidateVehicleResolution`
+or a window's ranking panel, not the video overlay.
+
+### Tests added
+
+`tests/perception/test_visualize.py` (new file, 5 tests): characterizes
+`draw_frame`'s existing, previously-untested behavior (returns
+same-shape image, draws the existing green box, does not mutate the
+input image, draws the trajectory trail when track state is supplied,
+renders correctly with zero detections) — a regression baseline proving
+this commit leaves it byte-for-byte behaviorally unchanged.
+
+`tests/test_rendering.py` (new file, 22 tests): one per outcome from this
+commit's own requirement 11 (a–k) — a normal vehicle's label carries
+ID/class/lane/speed; a `RESOLVED` candidate is colored red and a
+non-candidate vehicle in the same frame stays green; the red highlight
+moves to a different vehicle when a second `CandidateVehicleResolution`
+names a different `track_id`; an `AMBIGUOUS` resolution colors no vehicle
+red and emits an explicit banner naming every candidate; `NO_VEHICLE_
+FOR_HYPOTHESIS`, `NOT_RANKED`, and `candidate_resolution=None` all color
+every vehicle green with no banner; all four non-`ASSIGNED` lane statuses
+render their own explicit text (parametrized); an `UNAVAILABLE` speed
+renders explicitly rather than vanishing, distinct from an entirely
+omitted speed field; speed text never carries excessive decimal
+precision, both for `APPROXIMATE` and `VALIDATED` confidence; only
+explicitly-configured lane regions are ever drawn (a location standing in
+for an unconfigured/excluded region stays untouched); lane/speed segments
+are shown identically regardless of candidate status; the candidate label
+never contains "culprit", "responsible", or "confirmed". One integration
+-style end-to-end test (requirement 12) drives a single stopped vehicle
+through the full chain — `world.lane_geometry.assign_lane` (real `L1`
+region) → `perception.speed_estimation.estimate_vehicle_speed` (a
+CityFlow-style, `APPROXIMATE`-confidence calibration profile) →
+`evidence_builder.build_evidence_for_camera` → `ds_fusion.
+single_camera_result` → `hypotheses.ranking.build_ranking` (confirming H2
+wins) → `hypotheses.candidate_vehicle.resolve_candidate_vehicle`
+(confirming `RESOLVED`) → `render_annotated_frame`, asserting the
+rendered frame highlights that exact vehicle red and its label reads `"ID
+1 | Car | L1 | ~0 km/h (approx.) (Highest-ranked candidate)"`.
+
+### Explicit limitations / deliberately out of scope
+
+- `render_annotated_frame` is not called anywhere yet — no script, no
+  pipeline stage, no CLI entry point invokes it. Wiring it into a real
+  run against c006/c009 footage (producing an actual annotated demo
+  video with all three overlays) is future work, left for a later,
+  explicitly-scoped commit, per this commit's own "do not run the full
+  CityFlow showcase yet" instruction.
+- `lane_results_by_track_id`/`speed_estimates_by_track_id` are keyed by
+  the tracker's raw (per-camera) `track_id`, matching `TrackedDetection.
+  track_id`/`TrackState.track_id` — a future caller assembling these
+  dicts from `perception.lane_assignment.TrackLaneHistory`/`perception.
+  speed_estimation.VehicleSpeedEstimate` (both of which key by the
+  camera-qualified `f"{camera_id}:{track_id}"`) must strip the
+  `camera_id:` prefix when building the lookup dict this module expects;
+  this module does not do that translation itself.
+- The ambiguity banner and per-vehicle labels are plain `cv2.putText`
+  calls with no layout/collision handling (long labels or many vehicles
+  can overlap on screen) — acceptable for this commit's scope, matching
+  the pre-existing `draw_frame`'s own lack of label-collision handling.
+- No new lane-region drawing exists for a camera with zero configured
+  lanes (`lane_regions=()`) beyond simply drawing nothing — this is the
+  correct behavior (never fabricate a region), not a gap.
+
+---
+
 ## Commit 7 — Resolve evidence-backed candidate vehicle (`anvesh/hypotheses/candidate_vehicle.py`)
 
 **What changed:** Candidate-vehicle resolution only — no dashboard change,

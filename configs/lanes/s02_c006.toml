@@ -1,0 +1,112 @@
+# Lane geometry -- CityFlowV2 S02, camera c006 (showcase UPSTREAM camera).
+#
+# This file is CONFIGURATION ONLY, per `ANVESH_LANE_SPEED_FORENSIC_AUDIT.md`
+# SS8.1/SS11 Commit 3. It is not loaded by the pipeline yet -- nothing in
+# `anvesh/perception/` or `anvesh/pipeline.py` reads this file. Loading it
+# (`anvesh.world.lane_config.load_lane_config`) only constructs
+# `anvesh.world.lane_geometry.LaneRegion` objects for later use; it performs
+# no vehicle-to-lane assignment.
+#
+# SOURCE VIDEO: E:\traffic dataset\validation\S02\c006\vdo.avi
+# IMAGE RESOLUTION: 1920x1080 (confirmed via OpenCV metadata,
+#   `ANVESH_S02_CAMERA_PAIR_ANALYSIS.md`).
+# COORDINATE CONVENTION: image/pixel space -- x right from 0, y down from 0,
+#   origin at the top-left corner of the source frame. Matches
+#   `anvesh.world.lane_geometry.LaneRegion.vertices` and
+#   `RawDetection.bbox_xyxy` (`anvesh/perception/types.py`); NOT calibrated
+#   world-space metres (no `CalibrationProfile` is involved here).
+#
+# VISUAL METHOD: vertices were picked by overlaying a pixel-coordinate grid
+# (50px spacing) on `docs/demo_reference/s02_c006_c008_inspection/
+# c006_75pct_f1581.jpg` (a low-traffic frame, chosen so lane paint is not
+# obscured by queued vehicles) and reading lane-divider/edge-line pixel
+# positions directly off the grid, then verifying each candidate polygon by
+# drawing it back onto the frame and confirming it stays on drivable
+# pavement without crossing paint it shouldn't. This is NOT an automatic/ML
+# lane detection -- see design requirement C in the audit.
+#
+# CAMERA VIEW: c006 looks down a straight, divided, two-carriageway
+# arterial toward a signalized retail intersection. The near-side
+# (camera-facing) carriageway has 3 marked lanes at this camera's field of
+# view: a left-turn-only pocket (dashed "ONLY" text + left-curve arrow), a
+# center lane with no turn-restriction paint, and a right lane also marked
+# "ONLY" with a right-curve arrow. A grass median (with "DO NOT ENTER"
+# signage) separates the near-side carriageway from a smaller, more distant
+# far-side (opposing-direction) carriageway.
+#
+# LANE DEFINED:
+#   L1 -- the center lane of the near-side carriageway. This is the only
+#   lane in this camera's view with NO turn-restriction pavement marking
+#   anywhere along its visible length, so it is the only lane that can be
+#   confidently treated as a general-purpose through lane for its whole
+#   extent. Direct pixel inspection of both flanking lanes found their
+#   "ONLY" text/turn-arrow paint starting well up the visible corridor (not
+#   confined to a short stub near the stop line), so there was no honest
+#   way to carve out a "clean, unmarked" sub-region of either flanking lane
+#   -- see "turn pockets" below.
+#
+# TURN POCKETS: EXCLUDED, not treated as lanes, and not partially included.
+#   Rationale: (1) a vehicle in a marked turn-only pocket is, by definition,
+#   about to leave the through corridor, which conflicts with the "stable
+#   lane a vehicle travels along" assumption lane assignment/speed
+#   estimation needs; (2) the "ONLY" paint on both flanking lanes was found
+#   (by direct pixel inspection, not the earlier quick visual-inspection
+#   pass) to extend through most of each lane's visible length in this
+#   camera's frame, not just a short stub near the intersection, so there is
+#   no honestly-defensible unmarked sub-region to keep. This directly
+#   answers requirement 7's "is a turn pocket treated as a lane" question:
+#   no, both are excluded outright, not truncated.
+#
+# REGIONS DELIBERATELY EXCLUDED:
+#   - Both flanking near-side lanes (left-turn-only pocket, right-turn-only
+#     pocket) -- turn pockets, see above.
+#   - The far-side (opposing-direction) carriageway, beyond the median --
+#     visibly present (2 lanes) but its vehicles are smaller/more distant
+#     and its right lane's boundary follows a pronounced S-curve around the
+#     median that a straight-edged polygon cannot reliably represent without
+#     either clipping real lane pavement or bleeding into the grass median
+#     at different points along the curve; excluded per the "leave a
+#     conservative gap rather than pretend certainty" instruction rather
+#     than accepting an unreliable quadrilateral approximation.
+#   - The intersection apron / crosswalk area beyond y=440 (this frame's
+#     stop-bar region) -- excluded from L1's polygon by construction (see
+#     y_bottom below); this is where the flanking lanes' turn-arrow paint is
+#     visually densest and closest to L1, so a small margin was kept above
+#     it rather than extending L1 all the way to the stop line.
+#
+# KNOWN LIMITATIONS:
+#   - Vertices are a hand-measured visual approximation from one sampled
+#     frame, not a calibrated or surveyed measurement -- expect several
+#     pixels of error at any given point along an edge.
+#   - Valid only for this fixed camera's current framing; any change in
+#     camera position, angle, zoom, or resolution invalidates these
+#     coordinates silently (the same caveat the audit raised against V0's
+#     hand-typed polygons, SS1.5) -- nothing in this file or its loader
+#     detects that.
+#   - The polygon is a straight-edged quadrilateral approximating lane
+#     paint that is not perfectly straight (slight perspective/curvature);
+#     accuracy is best near the two sampled boundary rows (y=220, y=440)
+#     and interpolated in between.
+#   - L1 does not extend to the stop line/crosswalk; a vehicle queued at
+#     the intersection beyond y=440 will test as outside all regions
+#     (`UNKNOWN_OUTSIDE_REGIONS`), not a false lane match -- see
+#     `anvesh.world.lane_geometry.assign_lane`.
+
+[camera]
+camera_id = "s02_c006"
+source_video = 'E:\traffic dataset\validation\S02\c006\vdo.avi'
+image_width = 1920
+image_height = 1080
+
+[[lane]]
+lane_id = "L1"
+# Center through lane, near-side carriageway. No turn-restriction paint
+# anywhere along its visible length. Vertex order: top-left, top-right,
+# bottom-right, bottom-left (far end of the visible corridor to near end,
+# just short of the stop-bar/turn-arrow zone).
+vertices = [
+    [660.0, 220.0],
+    [1010.0, 220.0],
+    [946.0, 440.0],
+    [622.0, 440.0],
+]

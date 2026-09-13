@@ -183,3 +183,136 @@ fractional/sub-pixel coordinates; repeated evaluation gives an identical
 result; and — the determinism case a same-order repeat can't catch —
 reversed region order gives a byte-for-byte identical result, for both the
 `AMBIGUOUS` boundary case and a plain `ASSIGNED` case.
+
+---
+
+## Commit 3 — c006/c009 lane geometry configs (`configs/lanes/s02_c006.toml`, `configs/lanes/s02_c009.toml`)
+
+**What changed:** Added the first real, camera-specific lane configuration
+for the showcase corridor (`E:\traffic dataset\validation\S02\c006\vdo.avi`
+upstream, `...\c009\vdo.avi` downstream), plus a small loader
+(`anvesh/world/lane_config.py`, `load_lane_config` / `LaneCameraConfig`)
+that turns a TOML file into `LaneRegion` objects from Commit 2. This is
+configuration + loading only: nothing calls `load_lane_config` from
+`anvesh/perception/`, `anvesh/pipeline.py`, `scripts/export_ui_data.py`, or
+the dashboard. No vehicle, track, or detection is assigned a lane anywhere
+in the codebase after this commit.
+
+### Method
+
+Vertices were not typed in by eye against a raw screenshot (that is exactly
+V0's rejected method — audit §1.1/§1.6). Each candidate boundary line was
+picked by overlaying a 50px pixel-coordinate grid on a representative,
+lightly-trafficked frame (`docs/demo_reference/.../c006_75pct_f1581.jpg`,
+`.../c009_25pct_f527.jpg` — chosen specifically because queued traffic
+obscures lane paint in the busier sampled frames), reading candidate
+divider/edge positions off the grid, then rendering the candidate polygon
+back onto the frame and a second frame with real traffic to confirm it (a)
+stays on drivable pavement and (b) matches the actual path a real vehicle
+column drives through the corridor. Several early candidates failed this
+check and were corrected — most notably an initial c009 boundary that
+turned out to trace the left-turn pocket instead of the through lane, and
+a c006 attempt that extended too far toward the stop line and clipped both
+flanking turn-arrow markings. This back-and-forth is the reason the method
+is documented in this much detail: pixel-grid tracing on a curved,
+perspective road is easy to get subtly wrong in a way that still *looks*
+plausible without a rendered-overlay check.
+
+### Why only one lane per camera
+
+Direct pixel inspection (this commit) found a different lane layout than
+the earlier, single-pass visual-inspection documents estimated:
+
+- **c006**: 3 lanes in the near-side carriageway, but only the *center*
+  lane carries no turn-restriction paint. Both flanking lanes are marked
+  "ONLY" (left-turn pocket, right-turn pocket) with paint starting well up
+  the visible corridor, not confined to a short stub near the stop line.
+- **c009**: only 2 lanes in the near-side carriageway (one less than
+  `ANVESH_S02_C007_C009_VISUAL_INSPECTION.md`'s preliminary "2 through + 1
+  turn pocket" estimate) — a single dashed/solid divider was found, not
+  two, confirmed against the path of a real sedan-then-SUV-then-pickup
+  vehicle column. Only the one non-pocket lane carries no turn-restriction
+  paint.
+
+Given both cameras have exactly one lane whose entire visible length is
+free of turn-restriction paint, both configs define exactly one lane,
+`L1`. This is a smaller lane count than the audit's preliminary "2 through
++ 1 turn pocket" estimate for either camera — the earlier estimate was a
+quick visual scan without a pixel grid or a drawn-overlay check, and is
+superseded for lane geometry purposes by this commit's direct, verified
+measurement. Nothing about this changes the audit's downstream design
+(§8.1's `LANE_UNKNOWN` / multi-lane branching logic is unaffected by how
+many lanes a given camera happens to have).
+
+### Turn pockets: excluded, not truncated
+
+Every lane marked "ONLY" with a turn arrow (c006's left and right pockets,
+c009's left pocket) is excluded outright from both configs, per design
+requirement G/§7's instruction to make an explicit choice here. Two
+reasons, not one: (1) a vehicle in a turn pocket is, by definition, about
+to leave the through corridor, which conflicts with the "stable lane a
+vehicle travels along" assumption lane assignment and future speed
+estimation both need; (2) an earlier attempt to keep the *unmarked upper
+portion* of each turn pocket (truncating the polygon before the "ONLY"
+paint begins, the same way each lane's polygon already stops short of the
+stop-bar/crosswalk) was abandoned once direct pixel inspection showed the
+turn-restriction paint starts well up each pocket's visible length, not
+in a short stub near the intersection — there was no honestly-defensible
+"clearly general-purpose" sub-region left to carve out. Excluding the
+whole marked lane is the conservative choice per requirement 8, over
+pretending a partial polygon is still safely general-purpose.
+
+### Regions deliberately excluded (both cameras)
+
+- All turn-only pockets (see above).
+- The far-side (opposing-direction) carriageway, beyond the grass median —
+  visibly present at both cameras but smaller/more distant (matching the
+  audit's own §3.6/§6.4 note about weaker contact-point precision at
+  range), and for c006 specifically its lane boundary follows a
+  pronounced S-curve around the median that a straight-edged quadrilateral
+  cannot represent without either clipping real pavement or bleeding into
+  the median at some point along the curve.
+- The intersection apron/crosswalk area beyond each config's near
+  (bottom) boundary (c006: y=440; c009: y=600) — `L1`'s polygon stops
+  short of the stop line by construction, so a queued vehicle right at the
+  intersection tests as `UNKNOWN_OUTSIDE_REGIONS`, never a false match.
+
+### Coordinate convention
+
+Image/pixel space for both files: x right from 0, y down from 0, origin at
+the source frame's top-left corner — matching
+`anvesh.world.lane_geometry.LaneRegion.vertices` and
+`RawDetection.bbox_xyxy` (`anvesh/perception/types.py`), not calibrated
+world-space metres. Both cameras are 1920×1080 (confirmed via OpenCV
+metadata in `ANVESH_S02_CAMERA_PAIR_ANALYSIS.md`).
+
+### Known limitations
+
+- Hand-measured visual approximation from one sampled frame per camera,
+  not a calibrated or surveyed measurement — expect several pixels of
+  error at any point along an edge, worst between the two sampled boundary
+  rows.
+- Valid only for each camera's current fixed framing; any change in
+  camera position, angle, zoom, or resolution silently invalidates these
+  coordinates (same caveat the audit raised against V0's hand-typed
+  polygons, §1.5) — neither the config nor its loader detects this.
+- Only one lane per camera is defined (see above) — deliberately
+  conservative, not a claim that these roads have only one usable lane.
+
+### Tests added
+
+`tests/world/test_lane_config.py` (new file, 17 tests): both configs load
+successfully; expected lane IDs (`["L1"]` for each camera); loaded regions
+are valid `LaneRegion` instances (construction-time polygon validation from
+Commit 2 already enforces this — a successful load is itself proof); every
+vertex is within the documented image bounds; documented resolution is
+1920×1080 for both; repeated loading is deterministic (same camera_id,
+resolution, lane IDs, and vertices across five reloads); the conventional
+`configs/lanes/<camera_id>.toml` path helper; a missing file raises
+`FileNotFoundError`; a config with a duplicate `lane_id` raises
+`ValueError`; a config with an invalid polygon raises `ValueError`
+(delegated to `LaneRegion`); and one composition test confirming a loaded
+config's regions plug directly into Commit 2's `assign_lane` (an interior
+point resolves `ASSIGNED`/`L1`, a far-outside point resolves
+`UNKNOWN_OUTSIDE_REGIONS`) — still no pipeline wiring, just proof the two
+commits work together.

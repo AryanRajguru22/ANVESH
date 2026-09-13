@@ -1,0 +1,98 @@
+# Lane geometry -- CityFlowV2 S02, camera c009 (showcase DOWNSTREAM camera).
+#
+# This file is CONFIGURATION ONLY, per `ANVESH_LANE_SPEED_FORENSIC_AUDIT.md`
+# SS8.1/SS11 Commit 3. It is not loaded by the pipeline yet -- nothing in
+# `anvesh/perception/` or `anvesh/pipeline.py` reads this file. Loading it
+# (`anvesh.world.lane_config.load_lane_config`) only constructs
+# `anvesh.world.lane_geometry.LaneRegion` objects for later use; it performs
+# no vehicle-to-lane assignment.
+#
+# SOURCE VIDEO: E:\traffic dataset\validation\S02\c009\vdo.avi
+# IMAGE RESOLUTION: 1920x1080 (confirmed via OpenCV metadata,
+#   `ANVESH_S02_CAMERA_PAIR_ANALYSIS.md`).
+# COORDINATE CONVENTION: image/pixel space -- x right from 0, y down from 0,
+#   origin at the top-left corner of the source frame. Matches
+#   `anvesh.world.lane_geometry.LaneRegion.vertices` and
+#   `RawDetection.bbox_xyxy` (`anvesh/perception/types.py`); NOT calibrated
+#   world-space metres (no `CalibrationProfile` is involved here).
+#
+# VISUAL METHOD: vertices were picked by overlaying a pixel-coordinate grid
+# (50px spacing) on `docs/demo_reference/s02_c007_c009_inspection/
+# c009_25pct_f527.jpg` (a lightly-trafficked frame, chosen so lane paint and
+# the vehicle column are both visible together), calibrating candidate
+# boundary lines directly against visible paint and against the observed
+# path of an actual vehicle column (sedan, then an SUV/pickup queue) driving
+# through the frame, then verifying the final polygon by drawing it back
+# onto the frame. This is NOT an automatic/ML lane detection -- see design
+# requirement C in the audit.
+#
+# CAMERA VIEW: c009 looks down a straight, divided, two-carriageway
+# arterial toward the same style of signalized retail/dealership
+# intersection as c006. The near-side (camera-facing) carriageway has 2
+# marked lanes at this camera's field of view: a left-turn-only pocket
+# (dashed "ONLY" text + left-curve arrow) and one lane with no
+# turn-restriction paint. Direct pixel inspection (this commit) found only
+# one dashed/solid divider within the near-side carriageway, i.e. one
+# through lane -- not the two through lanes the preliminary quick visual
+# scan in `ANVESH_S02_C007_C009_VISUAL_INSPECTION.md` estimated; that
+# earlier document was a single-pass visual impression without a pixel grid
+# and is superseded here for lane count/geometry purposes by this commit's
+# direct measurement. A grass median separates the near-side carriageway
+# from a smaller, more distant far-side (opposing-direction) carriageway.
+#
+# LANE DEFINED:
+#   L1 -- the sole through lane of the near-side carriageway, confirmed
+#   against the visible path of a sedan, then an SUV/pickup-truck queue
+#   traveling through the frame toward the camera. No turn-restriction
+#   paint anywhere along its visible length.
+#
+# TURN POCKETS: EXCLUDED, not treated as lanes. The left-turn-only pocket
+#   (dashed "ONLY" text + left-curve arrow, left of L1) is excluded for the
+#   same reason as c006's flanking lanes: a vehicle in it is about to leave
+#   the through corridor, breaking the "stable lane" assumption, and this
+#   commit does not attempt to carve a "before the turn restriction begins"
+#   sub-region out of it.
+#
+# REGIONS DELIBERATELY EXCLUDED:
+#   - The left-turn-only pocket lane -- turn pocket, see above.
+#   - The far-side (opposing-direction) carriageway, beyond the median --
+#     visibly present but smaller/more distant, and (consistent with the
+#     conservative treatment applied to c006) not measured in this commit.
+#   - The intersection apron / crosswalk area beyond y=600 (this frame's
+#     stop-bar region) -- excluded from L1's polygon by construction.
+#
+# KNOWN LIMITATIONS:
+#   - Vertices are a hand-measured visual approximation from one sampled
+#     frame, not a calibrated or surveyed measurement -- expect several
+#     pixels of error at any given point along an edge.
+#   - Valid only for this fixed camera's current framing; any change in
+#     camera position, angle, zoom, or resolution invalidates these
+#     coordinates silently -- nothing in this file or its loader detects
+#     that.
+#   - The polygon is a straight-edged quadrilateral approximating lane
+#     paint that is not perfectly straight (slight perspective/curvature);
+#     accuracy is best near the two sampled boundary rows (y=220, y=600)
+#     and interpolated in between.
+#   - L1 does not extend to the stop line/crosswalk; a vehicle queued at
+#     the intersection beyond y=600 will test as outside all regions
+#     (`UNKNOWN_OUTSIDE_REGIONS`), not a false lane match -- see
+#     `anvesh.world.lane_geometry.assign_lane`.
+
+[camera]
+camera_id = "s02_c009"
+source_video = 'E:\traffic dataset\validation\S02\c009\vdo.avi'
+image_width = 1920
+image_height = 1080
+
+[[lane]]
+lane_id = "L1"
+# Sole through lane, near-side carriageway. No turn-restriction paint
+# anywhere along its visible length. Vertex order: top-left, top-right,
+# bottom-right, bottom-left (far end of the visible corridor to near end,
+# just short of the stop-bar zone).
+vertices = [
+    [685.0, 220.0],
+    [893.0, 220.0],
+    [750.0, 600.0],
+    [400.0, 600.0],
+]

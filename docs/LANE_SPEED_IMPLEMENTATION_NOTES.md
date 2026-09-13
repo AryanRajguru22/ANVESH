@@ -596,3 +596,184 @@ without error; and three "existing workflows unchanged" tests —
 `uncalibrated_profile` is explicitly `UNKNOWN`, and the original `>=4
 reference points` invariant still rejects a `MANUAL_SURVEY` profile with
 too few points.
+
+---
+
+## Commit 6 — Provenance-aware approximate speed estimation (`anvesh/perception/speed_estimation.py`)
+
+**What changed:** Speed estimation only — no candidate-vehicle work, no
+evidence/ranking change, no lane-change detection, no dashboard change.
+`anvesh/perception/motion.py` gained a third, unit-agnostic computation —
+`RobustSpeedStatus`, `RobustSpeedResult`, `compute_robust_speed` —
+extending (not duplicating) its existing `_step_speeds`/`_mean_and_error`
+machinery via a new shared `_consecutive_steps` helper.
+`anvesh/perception/speed_estimation.py` (new) composes that with Commit 4's
+`TrackState.ground_point_trajectory` and Commit 5's `CalibrationProfile`
+(`provenance`/`metric_validation`) to produce a `VehicleSpeedEstimate` —
+a km/h `Measurement` plus an explicit `SpeedConfidence`
+(`VALIDATED`/`APPROXIMATE`/`UNAVAILABLE`). The existing
+`ImageSpaceSpeedEstimate`/`WorldSpaceSpeedEstimate`/
+`compute_image_space_speed`/`compute_world_space_speed`, and everything
+in `schema_conversion.py` that already uses them, are completely
+unchanged.
+
+### Mathematical approach
+
+`compute_robust_speed` computes `total_distance / total_elapsed_time`
+across every valid consecutive trajectory step — each step's own
+duration naturally weights its contribution, rather than either (a) a
+naive first-vs-last-point measurement or (b) an unweighted arithmetic
+mean of per-step instantaneous speeds (`compute_image_space_speed`'s
+existing approach, left untouched). (b) matters because a single
+near-duplicate-timestamp jitter step can produce an enormous
+instantaneous speed that then counts as "one vote out of N" in a plain
+mean; under time-weighting, that same step contributes a small increment
+to *both* the distance and time sums (jitter is small-magnitude by
+nature), so it cannot dominate the result —
+`tests/perception/test_motion.py::test_robust_noisy_outlier_step_does_not_dominate_speed`
+demonstrates this directly: one 1000-units/s instantaneous outlier among
+10-units/s motion still resolves to ≈10, not the ≈340 a naive mean would
+give. The reported `error` reuses the *existing* `_mean_and_error`
+variance machinery over the same per-step speeds, so genuine noise still
+shows up as a large uncertainty — honestly reported, not hidden by the
+robust central estimate (requirement 10: value + error, never a falsely
+precise single number).
+
+### Temporal sampling
+
+Timestamp-based throughout — `dt` is always a real elapsed-time
+difference between two samples, never "number of detections between
+them" (the V0 defect the audit's §2.3 identified and the reason
+`TrackState`/`Frame` are timestamp-keyed in the first place).
+`estimate_vehicle_speed`'s defaults (`DEFAULT_MIN_SAMPLES=3`,
+`DEFAULT_MIN_ELAPSED_S=0.3s`, `DEFAULT_MAX_GAP_S=0.6s`) are derived, not
+arbitrary: CityFlowV2's confirmed 10 fps frame rate for c006/c009
+(`ANVESH_S02_CAMERA_PAIR_ANALYSIS.md`) gives a 0.1s frame interval, so
+`min_elapsed_s` requires spanning at least 3 frame-intervals (not one or
+two adjacent, highly-correlated frames — requirement 7's "robust
+window", never just first-vs-last), and `max_gap_s` sits comfortably
+above `TrackManager`'s own default `max_missed_frames=5` (0.5s at
+10fps) — the longest a track can go while still `PARTIAL` rather than
+finalized `LOST`, so a gap at or below that is ordinary occlusion, not a
+discontinuity worth excluding. All three are plain parameters, freely
+overridable for a different camera's own frame rate.
+
+### Coordinate semantics
+
+`estimate_vehicle_speed` projects `state.ground_point_trajectory`
+(bottom-center, requirement 1 — **never** `state.trajectory`, which
+remains centroid-based and untouched) through
+`calibration_profile.image_to_world`, then runs `compute_robust_speed` on
+the result, then multiplies by `MPS_TO_KMH = 3.6` — **always** under the
+assumption that the projected distance unit is metres. That assumption
+is applied identically regardless of provenance, because both
+provenances a `CalibrationProfile` can currently carry give it *some*
+basis: `MANUAL_SURVEY`'s correspondence points are real measured metres;
+`CITYFLOW_SUPPLIED`'s scale is merely plausible-as-metres per the
+forensic audit's own numerical check (§4.3), never proven. If a future
+provenance existed with no such basis at all, this module would need a
+third branch — none exists yet, so none was speculatively added.
+
+### Approximation / provenance / failure states
+
+Three independent axes, none collapsed into the others:
+
+1. **`RobustSpeedStatus`** (motion.py) — did the *math* succeed?
+   `OK`, or one of `INSUFFICIENT_OBSERVATIONS` /
+   `INSUFFICIENT_ELAPSED_TIME` / `INVALID_TRAJECTORY` /
+   `LARGE_TEMPORAL_GAP` (all four producible by `compute_robust_speed`
+   itself) / `CALIBRATION_UNAVAILABLE` / `INVALID_CALIBRATION` (reserved
+   for `estimate_vehicle_speed`'s own composition logic — `compute_
+   robust_speed` never returns these two, since it has no calibration
+   knowledge at all, matching `motion.py`'s existing strict separation
+   of concerns).
+2. **`CalibrationProvenance`** (Commit 5) — who produced the
+   homography: `MANUAL_SURVEY` / `CITYFLOW_SUPPLIED` / `UNKNOWN`.
+3. **`SpeedConfidence`** (this commit) — is the km/h number's physical
+   -unit claim trustworthy? `VALIDATED` only when the math reached `OK`
+   *and* `calibration_profile.metric_validation ==
+   MetricValidationStatus.VALIDATED` (today: `MANUAL_SURVEY` only).
+   `APPROXIMATE` when the math reached `OK` but `metric_validation ==
+   UNVALIDATED` (today: `CITYFLOW_SUPPLIED` always lands here — there is
+   no parameter anywhere in `estimate_vehicle_speed` that can override
+   this). `UNAVAILABLE` for every non-`OK` status, with `measurement`
+   forced to `None` by `VehicleSpeedEstimate.__post_init__` — never a
+   fabricated placeholder number.
+
+Requirement 9 (no silent zero) holds throughout: every degenerate case
+returns its own named status; a genuinely stationary vehicle still
+returns `OK`/`speed=0.0` (a real, distinct measurement, not an error).
+
+### Limitations
+
+- Ground-point-based, so it inherits every limitation `RawDetection.
+  ground_point` already documents (2D proxy, occlusion bias, no vehicle
+  -orientation awareness).
+- The `MPS_TO_KMH` conversion for a `CITYFLOW_SUPPLIED` profile is a
+  provisional assumption, not a proven fact — `SpeedConfidence.
+  APPROXIMATE` exists specifically to carry that caveat forward; nothing
+  downstream of `VehicleSpeedEstimate` should present it as a confirmed
+  metric value bare, without checking `confidence` first.
+- No independent validation step (checking a known lane width or
+  reference distance against a `CITYFLOW_SUPPLIED` homography's own
+  output) exists anywhere in the codebase yet — `metric_validation` can
+  only ever be `UNVALIDATED` for such a profile until that is built.
+- `max_gap_s`-excluded steps are simply dropped from the totals, not
+  separately reported in `VehicleSpeedEstimate` — a caller cannot
+  currently tell "OK, computed from a full clean window" apart from "OK,
+  computed after silently dropping one gap step" without inspecting
+  `RobustSpeedResult.sample_count` itself (not currently threaded
+  through to `VehicleSpeedEstimate`). Acceptable for this commit's scope;
+  worth revisiting if gap frequency turns out to matter for the
+  showcase.
+- `estimate_vehicle_speed` is not wired into `perception/pipeline.py` or
+  `anvesh/pipeline.py` — same deliberate stopping point Commit 4 left for
+  lane assignment, for the same reason (both orchestration files already
+  carry unrelated in-progress changes in the working tree that this
+  commit does not touch).
+
+### Why this is NOT yet validated physical speed
+
+A `CITYFLOW_SUPPLIED` `CalibrationProfile` can never reach
+`SpeedConfidence.VALIDATED` through this module, by construction — there
+is no code path, parameter, or default that flips
+`metric_validation` from `UNVALIDATED` to `VALIDATED`; that would require
+an actual independent check (e.g. a known real-world reference distance
+measured against this homography's own output), which does not exist
+anywhere in the codebase. Every km/h number this module produces for a
+CityFlow-sourced camera therefore carries `confidence=APPROXIMATE`
+permanently, until such a validation step is built and explicitly run —
+this commit deliberately stops short of building it, per its own scope.
+
+### Tests added
+
+`tests/perception/test_motion.py` (extended, +14 tests, all 11
+pre-existing tests unmodified and passing): straight-line known speed;
+zero movement is `OK` not an error; timestamp-based (not detection
+-count-based) — the same 3 samples compressed into a shorter real-time
+window produce a proportionally higher speed; irregular-timestamp
+weighting; insufficient observations; insufficient elapsed time; a large
+gap that leaves zero usable steps (`LARGE_TEMPORAL_GAP`) versus one that
+leaves a valid remaining segment (`OK`, using only that segment);
+non-finite coordinates (NaN and infinity, separately); the noisy-outlier
+-does-not-dominate case described above; `RobustSpeedResult`'s own
+all-or-nothing field validation (both directions); and the default
+`min_samples=2` matching the existing two-point convention.
+
+`tests/perception/test_speed_estimation.py` (new file, 11 tests, no
+dependency on the real dataset — a synthetic 2× -scale homography fixture
+stands in for a real CityFlow matrix, requirement 14): missing/explicitly
+-uncalibrated calibration is `UNAVAILABLE`; a synthetic CityFlow-style
+homography transformation produces the hand-computed expected km/h value;
+`CalibrationProvenance.CITYFLOW_SUPPLIED` and `MetricValidationStatus.
+UNVALIDATED` both hold for that profile; the core rule — a mathematically
+clean CityFlow-derived speed is `APPROXIMATE`, never `VALIDATED` — plus
+the contrasting case where a real `fit_planar_homography` survey *does*
+reach `VALIDATED`, proving `APPROXIMATE` isn't just a hardcoded universal
+default; ground-point trajectory drives the result even when the
+(separately supplied, stationary) centroid trajectory would give zero;
+`VehicleSpeedEstimate`'s own all-or-nothing field validation; and one full
+integration test (requirement 13) driving a `RawDetection` through
+`TrackedDetection` → `TrackManager.update()` →
+`estimate_vehicle_speed`, against a CityFlow-style profile, asserting the
+resulting estimate is `OK`/`APPROXIMATE` with the expected km/h value.

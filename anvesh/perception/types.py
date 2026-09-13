@@ -56,6 +56,54 @@ class RawDetection:
         x1, y1, x2, y2 = self.bbox_xyxy
         return ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
 
+    @property
+    def ground_point(self) -> tuple:
+        """The vehicle's estimated ground-contact point: bottom-center of
+        the bounding box (`bbox.x + bbox.width / 2`, `bbox.y + bbox.height`),
+        in the same source-frame pixel coordinates as `bbox_xyxy`.
+
+        WHY BOTTOM-CENTER FOR ROAD/LANE REASONING:
+        `centroid` (the box center) sits above the road plane for any
+        vehicle taller than it is wide in screen space -- a bus or truck's
+        box center can be well above the pavement, and how far above scales
+        with the vehicle's apparent height, which itself varies with
+        distance from the camera. Bottom-center is the point on the box
+        closest to where the vehicle's wheels actually meet the road, which
+        is the physically meaningful point for anything that reasons about
+        *where on the road* a vehicle is -- e.g. a future lane-polygon test
+        (lane boundaries exist on the road plane, not floating above it) or
+        a homography/world-space projection, which assumes the projected
+        point lies on the road plane (see
+        `anvesh.world.calibration.CalibrationProfile`).
+
+        WHY `centroid` REMAINS:
+        `centroid` is unchanged and still what `TrackManager`/
+        `schema_conversion` use for trajectory and speed today (see
+        `anvesh.perception.track_manager`). This property is purely
+        additive, not a replacement -- switching speed/trajectory math to
+        `ground_point` is a separate, not-yet-made decision (see
+        `ANVESH_LANE_SPEED_FORENSIC_AUDIT.md`, which scopes this property to
+        Commit 1 only: no lane assignment, no speed change).
+
+        LIMITATIONS (explicit, not silently assumed away):
+        - Still a 2D image-space point, not a measured 3D contact point --
+          occlusion (the true bottom edge hidden behind another vehicle or
+          object) biases this point upward, same as it would bias any
+          other box-derived proxy.
+        - For a box touching the bottom edge of the frame, this point is
+          the frame boundary, not necessarily the vehicle's true contact
+          point (the vehicle may extend further out of frame).
+        - Computed purely from the 2D box; it does not know vehicle
+          orientation, so for a vehicle at a steep side angle the
+          bottom-center of its box is not necessarily under its true
+          centerline.
+        - Performs no lane assignment, calibration, or coordinate
+          transform itself -- it only derives a pixel point from an
+          existing pixel box.
+        """
+        x1, _y1, x2, y2 = self.bbox_xyxy
+        return ((x1 + x2) / 2.0, y2)
+
 
 @dataclass(frozen=True)
 class TrackedDetection:

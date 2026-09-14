@@ -36,7 +36,7 @@ def _detection_centered_on(x, y, half_size=5.0, frame_index=0, timestamp=0.0):
 
 def test_vehicle_clearly_inside_c006_l1_is_assigned():
     config = load_lane_config(default_lane_config_path("s02_c006"))
-    detection = _detection_centered_on(800.0, 300.0)  # inside c006 L1 by construction
+    detection = _detection_centered_on(705.0, 300.0)  # inside c006 L1 by construction (Commit 9A.1 geometry)
 
     result = assign_detection_lane(detection, config.regions)
 
@@ -128,8 +128,8 @@ def test_lane_assignment_survives_schema_conversion_path():
         first_seen=0.0,
         last_seen=0.1,
         occlusion_state=OcclusionState.VISIBLE,
-        trajectory=[(800.0, 300.0, 0.0), (800.0, 300.0, 0.1)],
-        ground_point_trajectory=[(800.0, 300.0, 0.0), (800.0, 300.0, 0.1)],
+        trajectory=[(705.0, 300.0, 0.0), (705.0, 300.0, 0.1)],
+        ground_point_trajectory=[(705.0, 300.0, 0.0), (705.0, 300.0, 0.1)],
     )
     config = load_lane_config(default_lane_config_path("s02_c006"))
 
@@ -185,17 +185,18 @@ def test_integration_detection_through_track_manager_to_lane_history():
     using the real c006 config from Commit 3."""
     config = load_lane_config(default_lane_config_path("s02_c006"))
 
-    # bbox chosen so ground_point (bottom-center) = (800.0, 300.0), well
-    # inside c006 L1, while the box is tall enough that centroid differs.
+    # bbox chosen so ground_point (bottom-center) = (705.0, 300.0), well
+    # inside c006 L1 (Commit 9A.1 geometry), while the box is tall enough
+    # that centroid differs.
     detection = RawDetection(
         frame_index=0,
         timestamp=0.0,
         class_name="car",
         vehicle_class=VehicleClass.CAR,
         confidence=0.9,
-        bbox_xyxy=(780.0, 250.0, 820.0, 300.0),
+        bbox_xyxy=(685.0, 250.0, 725.0, 300.0),
     )
-    assert detection.ground_point == (800.0, 300.0)
+    assert detection.ground_point == (705.0, 300.0)
     assert detection.centroid != detection.ground_point
 
     manager = TrackManager(max_missed_frames=3, partial_after_missed_frames=1)
@@ -203,7 +204,7 @@ def test_integration_detection_through_track_manager_to_lane_history():
     manager.finalize()
 
     state = manager.finished_tracks[0]
-    assert state.ground_point_trajectory == [(800.0, 300.0, 0.0)]
+    assert state.ground_point_trajectory == [(705.0, 300.0, 0.0)]
 
     lane_history = build_track_lane_history("s02_c006", state, config.regions)
 

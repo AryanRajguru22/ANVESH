@@ -16,15 +16,6 @@
 #   `RawDetection.bbox_xyxy` (`anvesh/perception/types.py`); NOT calibrated
 #   world-space metres (no `CalibrationProfile` is involved here).
 #
-# VISUAL METHOD: vertices were picked by overlaying a pixel-coordinate grid
-# (50px spacing) on `docs/demo_reference/s02_c006_c008_inspection/
-# c006_75pct_f1581.jpg` (a low-traffic frame, chosen so lane paint is not
-# obscured by queued vehicles) and reading lane-divider/edge-line pixel
-# positions directly off the grid, then verifying each candidate polygon by
-# drawing it back onto the frame and confirming it stays on drivable
-# pavement without crossing paint it shouldn't. This is NOT an automatic/ML
-# lane detection -- see design requirement C in the audit.
-#
 # CAMERA VIEW: c006 looks down a straight, divided, two-carriageway
 # arterial toward a signalized retail intersection. The near-side
 # (camera-facing) carriageway has 3 marked lanes at this camera's field of
@@ -34,32 +25,107 @@
 # signage) separates the near-side carriageway from a smaller, more distant
 # far-side (opposing-direction) carriageway.
 #
-# LANE DEFINED:
-#   L1 -- the center lane of the near-side carriageway. This is the only
-#   lane in this camera's view with NO turn-restriction pavement marking
-#   anywhere along its visible length, so it is the only lane that can be
-#   confidently treated as a general-purpose through lane for its whole
-#   extent. Direct pixel inspection of both flanking lanes found their
-#   "ONLY" text/turn-arrow paint starting well up the visible corridor (not
-#   confined to a short stub near the stop line), so there was no honest
-#   way to carve out a "clean, unmarked" sub-region of either flanking lane
-#   -- see "turn pockets" below.
+# =============================================================================
+# REVISION HISTORY
+# =============================================================================
+#
+# Commit 3 (original): L1 only, a single 4-vertex quadrilateral hand-measured
+#   from pavement paint in one reference frame
+#   (`docs/demo_reference/s02_c006_c008_inspection/c006_75pct_f1581.jpg`),
+#   vertices [(660,220),(1010,220),(946,440),(622,440)].
+#
+# Commit 9A.1 (this revision) -- geometry CORRECTED using real trajectory
+#   evidence, not repeated visual pixel-picking. See
+#   `ANVESH_C006_LANE_COVERAGE_ANALYSIS.md` (the read-only analysis that
+#   discovered the defect) and `ANVESH_C006_LANE_GEOMETRY_ITERATION.md` (this
+#   fix's full derivation, validation, and before/after numbers) for complete
+#   detail. Summary of what changed and why:
+#
+#   - The Commit 3 `L1` quadrilateral was found to be geometrically DEFECTIVE,
+#     not merely under-sized: checked against ~30s of real YOLOv8+ByteTrack
+#     ground-point trajectories (bottom-center of `bbox_xyxy`, NEVER the
+#     bounding-box centroid -- see `anvesh.perception.types.RawDetection.
+#     ground_point`'s own rationale), it captured only 35.8% of its own
+#     intended lane's observations (too narrow, mostly on the left edge) while
+#     46.3% of the ADJACENT lane's observations fell inside it anyway (too
+#     wide on the right edge) -- i.e. it was leaking real cross-lane
+#     contamination, not just under-covering its own lane.
+#   - The same trajectory evidence also proved the near-side carriageway has
+#     TWO real, physically distinct, substantially-used through-traffic lanes
+#     in this camera's field of view (12 independent tracks in one, 10 in the
+#     other, over one 30s sample) -- not the single lane Commit 3 modeled.
+#     This is confirmed directly against a real analyzed video frame (not
+#     just a reference still): six vehicles queued in one lane, a seventh
+#     independently occupying the other, simultaneously
+#     (`docs/demo_reference/s02_c006_lane_coverage_analysis/
+#     02_real_frame_two_lanes_confirmed.jpg`).
+#   - `L1` was RE-DERIVED (not just widened) from per-row (y) percentile
+#     envelopes of real ground points belonging ONLY to that lane's own
+#     stable, full-corridor tracks (a known turn-pocket-bound outlier track
+#     was excluded from the fitting set -- seeded from
+#     `ANVESH_C006_LANE_COVERAGE_ANALYSIS.md`'s own track-level findings), with
+#     an added safety margin, at THREE sampled rows (y=210, y=330, y=460)
+#     instead of Commit 3's two (y=220, y=440) -- a straight 2-row edge was
+#     measured to deviate up to ~29px from the real (curving) lane boundary at
+#     the midpoint of the range; a 3-row, 6-vertex polygon reduces that to
+#     single-digit pixels. This is still a plain, hand-auditable polygon (no
+#     new code, no curve-fitting library) -- `anvesh.world.lane_geometry.
+#     LaneRegion` already supports any polygon with >=3 vertices.
+#   - A NEW lane, `L2`, was added for the second, physically real lane --
+#     explicitly marked PROVISIONAL (see the `[[lane]]` block below): its
+#     pavement is marked with an exclusive right-turn arrow + "ONLY" text, and
+#     although every one of its 10 sampled tracks drove straight through the
+#     ENTIRE visible corridor without turning, that only proves stability
+#     *within camera view* -- it cannot rule out that these vehicles turn
+#     immediately after leaving the frame, which is exactly what the turn
+#     restriction would require. `L2` should not be assumed equivalent in
+#     confidence to `L1` by any downstream consumer of this config.
+#   - Validated (`ANVESH_C006_LANE_GEOMETRY_ITERATION.md`): zero cross-lane
+#     leakage in either direction (down from 46.3% one-way under Commit 3),
+#     zero leakage into either new polygon from the far-side carriageway, the
+#     left-turn pocket, or background/parked-vehicle detections, and
+#     perfectly stable (non-flickering) per-track assignment sequences across
+#     five different reference frames spanning the full video timeline.
+#
+# =============================================================================
+# METHODOLOGY (Commit 9A.1)
+# =============================================================================
+#
+# Vertices for both `L1` and `L2` were derived from real per-detection ground
+# points (bottom-center of `bbox_xyxy` -- the vehicle's actual roadway
+# footprint, never the bounding-box centroid) captured by the existing
+# YOLOv8+ByteTrack pipeline over a 30-second bounded sample of this camera's
+# own video (`ui/data/anvesh_s02_c006_data.json`, produced by
+# `scripts/run_s02_c006_showcase.py`), NOT by eyeballing pavement paint on a
+# single still frame (Commit 3's method). For each lane, tracks confirmed (by
+# their own stable, full-corridor motion) to belong to that lane were pooled;
+# at three sampled rows (y=210, y=330, y=460) the 0th/100th-percentile
+# (min/max) x extent of their real ground points was measured, then widened
+# by a flat 8px safety margin on both edges. The two lanes' resulting
+# envelopes never touch: the narrowest gap between them (at y=210) is 29px,
+# growing to 159px by y=460 -- a deliberate buffer, not a rounding accident,
+# so a point near the true (unmeasured) painted lane-divider line is reported
+# `unknown_outside_regions` rather than guessed into either lane.
+#
+# Every candidate polygon was then visually validated -- overlaid and
+# re-checked -- against FIVE different reference frames spanning the entire
+# video (start, 25%, 50%, 75%, end), not just one still, specifically to
+# confirm the fit holds under different traffic/lighting conditions
+# (`docs/demo_reference/s02_c006_lane_geometry_iteration/`).
 #
 # TURN POCKETS: EXCLUDED, not treated as lanes, and not partially included.
-#   Rationale: (1) a vehicle in a marked turn-only pocket is, by definition,
-#   about to leave the through corridor, which conflicts with the "stable
-#   lane a vehicle travels along" assumption lane assignment/speed
-#   estimation needs; (2) the "ONLY" paint on both flanking lanes was found
-#   (by direct pixel inspection, not the earlier quick visual-inspection
-#   pass) to extend through most of each lane's visible length in this
-#   camera's frame, not just a short stub near the intersection, so there is
-#   no honestly-defensible unmarked sub-region to keep. This directly
-#   answers requirement 7's "is a turn pocket treated as a lane" question:
-#   no, both are excluded outright, not truncated.
+#   Re-confirmed by Commit 9A.1's trajectory evidence, not just Commit 3's
+#   pixel inspection: no repeated, stable through-traffic population was
+#   observed in either turn pocket (only isolated single tracks, at least one
+#   of which visibly exits the frame early rather than continuing to the
+#   bottom -- consistent with actually turning). See `L2`'s own PROVISIONAL
+#   caveat above for why the right lane, despite being pavement-marked
+#   "ONLY", was NOT bucketed in with the turn pockets outright.
 #
-# REGIONS DELIBERATELY EXCLUDED:
-#   - Both flanking near-side lanes (left-turn-only pocket, right-turn-only
-#     pocket) -- turn pockets, see above.
+# REGIONS DELIBERATELY EXCLUDED (all re-confirmed against real trajectories
+# in Commit 9A.1, zero observations from any of these leaked into `L1`/`L2`):
+#   - Both flanking near-side lanes' actual turn pockets (the marked-turn
+#     segment nearest the stop line) -- see above.
 #   - The far-side (opposing-direction) carriageway, beyond the median --
 #     visibly present (2 lanes) but its vehicles are smaller/more distant
 #     and its right lane's boundary follows a pronounced S-curve around the
@@ -67,30 +133,45 @@
 #     either clipping real lane pavement or bleeding into the grass median
 #     at different points along the curve; excluded per the "leave a
 #     conservative gap rather than pretend certainty" instruction rather
-#     than accepting an unreliable quadrilateral approximation.
-#   - The intersection apron / crosswalk area beyond y=440 (this frame's
-#     stop-bar region) -- excluded from L1's polygon by construction (see
-#     y_bottom below); this is where the flanking lanes' turn-arrow paint is
-#     visually densest and closest to L1, so a small margin was kept above
-#     it rather than extending L1 all the way to the stop line.
+#     than accepting an unreliable quadrilateral approximation. Confirmed
+#     directly: 812/812 real far-side ground points fall outside both `L1`
+#     and `L2`.
+#   - The intersection apron / crosswalk area beyond y=460 (this frame's
+#     stop-bar region) -- excluded from both lanes' polygons by construction;
+#     this is where the flanking lanes' turn-arrow paint is visually densest
+#     and closest to the through lanes, so a small margin was kept above it
+#     rather than extending either polygon all the way to the stop line.
+#   - Static/background detections (parked vehicles in the visible retail
+#     lots, distant traffic near the signalized intersection well beyond this
+#     camera's own carriageway) -- not a lane geometry question at all; no
+#     polygon here covers the parking lots or the distant cross-street.
 #
 # KNOWN LIMITATIONS:
-#   - Vertices are a hand-measured visual approximation from one sampled
-#     frame, not a calibrated or surveyed measurement -- expect several
-#     pixels of error at any given point along an edge.
+#   - Vertices are still a hand-measured (now trajectory-anchored, not purely
+#     visual) approximation from one 30-second sample, not a calibrated or
+#     surveyed measurement -- expect several pixels of error at any given
+#     point along an edge, and note the deliberately conservative safety
+#     margins/gaps described above.
 #   - Valid only for this fixed camera's current framing; any change in
 #     camera position, angle, zoom, or resolution invalidates these
-#     coordinates silently (the same caveat the audit raised against V0's
-#     hand-typed polygons, SS1.5) -- nothing in this file or its loader
-#     detects that.
-#   - The polygon is a straight-edged quadrilateral approximating lane
-#     paint that is not perfectly straight (slight perspective/curvature);
-#     accuracy is best near the two sampled boundary rows (y=220, y=440)
-#     and interpolated in between.
-#   - L1 does not extend to the stop line/crosswalk; a vehicle queued at
-#     the intersection beyond y=440 will test as outside all regions
+#     coordinates silently -- nothing in this file or its loader detects
+#     that.
+#   - Each polygon is a 6-vertex, 2-segment approximation of lane paint that
+#     curves continuously (perspective + a real road curve) -- more accurate
+#     than a 4-vertex quadrilateral over the same span, but still a piecewise-
+#     linear approximation, not an exact curve fit. Accuracy is best near the
+#     three sampled rows (y=210, y=330, y=460) and linearly interpolated
+#     between them.
+#   - Neither lane extends to the stop line/crosswalk; a vehicle queued at
+#     the intersection beyond y=460 will test as outside all regions
 #     (`UNKNOWN_OUTSIDE_REGIONS`), not a false lane match -- see
 #     `anvesh.world.lane_geometry.assign_lane`.
+#   - `L2` is PROVISIONAL (see REVISION HISTORY above): real, physically
+#     distinct, and validated against 30s of real traffic, but its pavement
+#     carries an exclusive-turn marking whose legal effect cannot be verified
+#     from this camera's field of view alone. Any downstream use of `L2`
+#     (candidate-vehicle logic, speed reporting, etc.) should treat it with
+#     that caveat, not as an equally-confident general lane the way `L1` is.
 
 [camera]
 camera_id = "s02_c006"
@@ -100,13 +181,39 @@ image_height = 1080
 
 [[lane]]
 lane_id = "L1"
-# Center through lane, near-side carriageway. No turn-restriction paint
-# anywhere along its visible length. Vertex order: top-left, top-right,
-# bottom-right, bottom-left (far end of the visible corridor to near end,
-# just short of the stop-bar/turn-arrow zone).
+# Center through lane, near-side carriageway (Commit 9A.1 correction -- see
+# REVISION HISTORY above). No turn-restriction paint anywhere along its
+# visible length; the only near-side lane with a full, unambiguous
+# general-purpose-through-lane record. 6 vertices = 3 sampled rows (y=210,
+# 330, 460), far-to-near, each row's (left, right) pair; derived from the
+# real min/max ground-point extent of this lane's own stable tracks, +8px
+# safety margin per edge. Vertex order: top-left, top-right, mid-right,
+# bottom-right, bottom-left, mid-left.
 vertices = [
-    [660.0, 220.0],
-    [1010.0, 220.0],
-    [946.0, 440.0],
-    [622.0, 440.0],
+    [769.0, 210.0],
+    [846.0, 210.0],
+    [711.0, 330.0],
+    [606.0, 460.0],
+    [533.0, 460.0],
+    [636.0, 330.0],
+]
+
+[[lane]]
+lane_id = "L2"
+# PROVISIONAL -- see the [[lane]] L2 caveat in REVISION HISTORY/KNOWN
+# LIMITATIONS above before relying on this lane's data with the same
+# confidence as L1. Right lane, near-side carriageway, pavement-marked
+# "ONLY" with a right-turn arrow; real trajectory evidence (10 independent
+# tracks, 605 observations, one 30s sample) shows every one driving straight
+# through the ENTIRE visible corridor without turning, but this camera
+# cannot see whether they turn immediately beyond its field of view. Same
+# 3-row (y=210, 330, 460), +8px-margin derivation as L1, from this lane's
+# own tracks. Vertex order matches L1's convention.
+vertices = [
+    [875.0, 210.0],
+    [940.0, 210.0],
+    [854.0, 330.0],
+    [814.0, 460.0],
+    [765.0, 460.0],
+    [814.0, 330.0],
 ]

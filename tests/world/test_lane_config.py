@@ -22,7 +22,9 @@ def test_config_loads_successfully(path):
 def test_c006_expected_lane_ids():
     config = load_lane_config(C006_PATH)
     assert config.camera_id == "s02_c006"
-    assert [r.lane_id for r in config.regions] == ["L1"]
+    # Commit 9A.1: c006 now models two real near-side lanes, L1 and the
+    # PROVISIONAL L2 (see configs/lanes/s02_c006.toml REVISION HISTORY).
+    assert [r.lane_id for r in config.regions] == ["L1", "L2"]
 
 
 def test_c009_expected_lane_ids():
@@ -127,7 +129,7 @@ def test_loaded_regions_are_usable_with_assign_lane():
     `assign_lane` -- still no wiring into the pipeline, just proof the two
     commits compose."""
     config = load_lane_config(C006_PATH)
-    interior_point = (800.0, 300.0)  # inside L1's polygon by construction
+    interior_point = (705.0, 300.0)  # inside L1's polygon by construction (Commit 9A.1 geometry)
     result = assign_lane(interior_point, config.regions)
     assert result.status == LaneAssignmentStatus.ASSIGNED
     assert result.lane_id == "L1"

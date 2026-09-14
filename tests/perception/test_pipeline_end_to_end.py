@@ -82,6 +82,40 @@ def test_end_to_end_pipeline_produces_expected_schema_objects(tiny_video_path: P
     assert track_2.motion_space == MotionSpace.IMAGE
 
 
+def test_track_states_retains_raw_track_state_per_vehicle_track(tiny_video_path: Path):
+    """`M1PipelineResult.track_states` (Commit 9A, single-camera lane/speed
+    integration) must carry the raw `TrackState` for every track
+    `vehicle_tracks` was built from, one-to-one by (unqualified) track_id
+    -- needed because `perception.speed_estimation.estimate_vehicle_speed`
+    requires `TrackState.ground_point_trajectory`, which the frozen
+    `VehicleTrack` schema object never carries."""
+    script = {
+        0: [("1", (10.0, 10.0))],
+        1: [("1", (12.0, 10.0))],
+        2: [("1", (14.0, 10.0))],
+        4: [("2", (50.0, 50.0))],
+    }
+    tracker = ScriptedTracker(script)
+
+    result = run_m1_pipeline(
+        video_path=tiny_video_path,
+        camera_id="cam-e2e",
+        tracker=tracker,
+        model_id="scripted-test",
+        model_version="0.0.0",
+        max_missed_frames=1,
+        partial_after_missed_frames=1,
+    )
+
+    assert len(result.track_states) == len(result.vehicle_tracks) == 2
+    qualified_ids = {t.track_id for t in result.vehicle_tracks}
+    raw_ids_qualified = {f"cam-e2e:{s.track_id}" for s in result.track_states}
+    assert raw_ids_qualified == qualified_ids
+
+    state_1 = next(s for s in result.track_states if s.track_id == "1")
+    assert len(state_1.ground_point_trajectory) == 3
+
+
 def test_end_to_end_pipeline_produces_world_space_tracks_when_calibrated(tiny_video_path: Path):
     """Same scripted scenario as above, but with a calibrated profile
     supplied -- the pipeline must thread it through to produce metric,
@@ -110,6 +144,49 @@ def test_end_to_end_pipeline_produces_world_space_tracks_when_calibrated(tiny_vi
     assert track.speed_estimate.value > 0.0
     for sample in track.position_history:
         assert hasattr(sample, "world_x") and hasattr(sample, "world_y")
+
+
+def test_on_frame_tracked_hook_is_called_once_per_frame_with_matching_data(tiny_video_path: Path):
+    """Additive, optional hook (video-demo integration): must fire once per
+    frame with exactly the same (frame_index, timestamp, tracked_detections)
+    the pipeline itself uses for track_manager.update() -- and must not
+    change anything else about the pipeline's return value."""
+    script = {
+        0: [("1", (10.0, 10.0))],
+        1: [("1", (12.0, 10.0))],
+        4: [("2", (50.0, 50.0))],
+    }
+    calls = []
+
+    result_with_hook = run_m1_pipeline(
+        video_path=tiny_video_path,
+        camera_id="cam-hook",
+        tracker=ScriptedTracker(script),
+        model_id="scripted-test",
+        model_version="0.0.0",
+        max_missed_frames=1,
+        partial_after_missed_frames=1,
+        on_frame_tracked=lambda frame_index, timestamp, tracked: calls.append((frame_index, timestamp, tracked)),
+    )
+    result_without_hook = run_m1_pipeline(
+        video_path=tiny_video_path,
+        camera_id="cam-hook",
+        tracker=ScriptedTracker(script),
+        model_id="scripted-test",
+        model_version="0.0.0",
+        max_missed_frames=1,
+        partial_after_missed_frames=1,
+    )
+
+    assert len(calls) == 5  # once per frame, including frames with zero detections
+    assert [c[0] for c in calls] == [0, 1, 2, 3, 4]
+    assert calls[0][2][0].track_id == "1"
+    assert calls[0][2][0].detection.bbox_xyxy == (5.0, 5.0, 15.0, 15.0)
+    assert calls[2][2] == []  # frame 2: no scripted detections -> empty tracked list
+    assert calls[4][2][0].track_id == "2"
+
+    assert result_with_hook.frame_count == result_without_hook.frame_count
+    assert len(result_with_hook.vehicle_tracks) == len(result_without_hook.vehicle_tracks)
 
 
 def test_end_to_end_pipeline_writes_annotated_video(tiny_video_path: Path, tmp_path: Path):

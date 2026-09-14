@@ -4,8 +4,9 @@ Pure composition: this module sequences calls to already-existing M1-M7
 functions and bundles their outputs into one `AnveshWindowResult`. It
 reimplements none of reliability scoring, evidence rules, Dempster-Shafer
 fusion, ranking, congestion classification, shockwave propagation,
-feedback adjustment, or stopped-vehicle detection -- every number in the
-result comes from the module that already owns that computation.
+feedback adjustment, stopped-vehicle detection, or candidate-vehicle
+resolution -- every number in the result comes from the module that
+already owns that computation.
 
 Scope, one window at a time (mirrors `world.corridor_state.
 assemble_corridor_state`'s own scope, not a multi-window streaming
@@ -47,6 +48,7 @@ from anvesh.evidence.evidence_builder import build_evidence_for_camera
 from anvesh.evidence.reliability import compute_reliability
 from anvesh.feedback.update_engine import apply_feedback
 from anvesh.fusion.ds_fusion import fuse_two_cameras, single_camera_result
+from anvesh.hypotheses.candidate_vehicle import resolve_candidate_vehicle
 from anvesh.hypotheses.ranking import attach_ranking_to_corridor_state, build_ranking
 from anvesh.propagation.shockwave import predict_propagation
 from anvesh.safety.stopped_vehicle import build_safety_event, classify_stopped_vehicle
@@ -89,6 +91,7 @@ class AnveshWindowResult:
     evidence_by_camera: dict
     reliability_by_camera: dict
     candidate_ranking: object  # schemas.CandidateCauseHypothesis
+    candidate_vehicle: object  # hypotheses.candidate_vehicle.CandidateVehicleResolution
     corridor_state: object  # schemas.CorridorState, or None
     corridor_state_reason: object  # str, or None if corridor_state is present
     propagation_prediction: object  # schemas.PropagationPrediction, or None
@@ -205,6 +208,9 @@ def run_corridor_window(
     if candidate_ranking.outcome.value != "ranked":
         limitations.append(f"candidate ranking outcome is '{candidate_ranking.outcome.value}', not a ranked cause")
 
+    # --- candidate vehicle (hypotheses.candidate_vehicle) -- SAME candidate_ranking/evidence_by_camera as above ---
+    candidate_vehicle = resolve_candidate_vehicle(candidate_ranking, evidence_by_camera)
+
     # --- corridor state (world.corridor_state) -- only when a real topology was supplied ---
     corridor_state = None
     corridor_state_reason = None
@@ -287,6 +293,7 @@ def run_corridor_window(
         evidence_by_camera=evidence_by_camera,
         reliability_by_camera=reliability_by_camera,
         candidate_ranking=candidate_ranking,
+        candidate_vehicle=candidate_vehicle,
         corridor_state=corridor_state,
         corridor_state_reason=corridor_state_reason,
         propagation_prediction=propagation_prediction,

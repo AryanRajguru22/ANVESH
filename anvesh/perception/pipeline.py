@@ -9,6 +9,28 @@ is not itself the entry point (see scripts/run_pipeline.py).
 `calibration_profile` is optional (M2): when given and calibrated, tracks
 come out in world-space (metres); otherwise this camera's tracks stay
 image-space, exactly as in M1. See `schema_conversion.build_vehicle_track`.
+
+`on_frame_tracked` (productization pass, video-demo integration): an
+optional `(frame_index, timestamp, tracked_detections) -> None` callback
+invoked once per frame, right after this frame's `tracked_detections`
+are computed. Purely additive -- omitted, it changes nothing about this
+function's existing behavior. It exists because `M1PipelineResult` does
+not retain per-frame track-to-bounding-box association (only final
+per-track summaries in `vehicle_tracks`, and untracked detections in
+`camera_observations`); a caller that needs to render a real,
+frame-synchronized bounding-box overlay (e.g. a UI export script) needs
+exactly the same `tracked_detections` this loop already computes for
+`track_manager.update()` and `draw_frame()` -- this hook exposes that
+without duplicating this module's own orchestration loop elsewhere.
+
+`M1PipelineResult.track_states` (single-camera lane/speed integration):
+the raw `track_manager.TrackState` objects for every finished/active
+track, in the same order as `vehicle_tracks` were built from them --
+additive, always populated, never read by this module itself. It exists
+because `vehicle_tracks` (frozen `storage.schemas.VehicleTrack` objects)
+carry no `ground_point_trajectory`, which `perception.speed_estimation.
+estimate_vehicle_speed` requires; a caller needing per-track approximate
+speed uses this list instead of re-tracking.
 """
 
 from __future__ import annotations
@@ -27,6 +49,7 @@ class M1PipelineResult:
     camera_observations: list = field(default_factory=list)
     vehicle_tracks: list = field(default_factory=list)
     frame_count: int = 0
+    track_states: list = field(default_factory=list)  # raw TrackState objects (see module docstring)
 
 
 def run_m1_pipeline(
@@ -39,6 +62,7 @@ def run_m1_pipeline(
     partial_after_missed_frames: int = 1,
     visualization_output_path=None,
     calibration_profile=None,
+    on_frame_tracked=None,
 ) -> M1PipelineResult:
     frame_source = VideoFileFrameSource(video_path)
     track_manager = TrackManager(
@@ -52,6 +76,8 @@ def run_m1_pipeline(
         for frame in frame_source:
             raw_detections, tracked_detections = tracker.update(frame.image, frame.index, frame.timestamp)
             track_manager.update(frame.timestamp, tracked_detections)
+            if on_frame_tracked is not None:
+                on_frame_tracked(frame.index, frame.timestamp, tracked_detections)
 
             result.camera_observations.append(
                 build_camera_observation(
@@ -84,8 +110,9 @@ def run_m1_pipeline(
             writer.release()
 
     track_manager.finalize()
+    result.track_states = list(track_manager.all_tracks())
     result.vehicle_tracks = [
         build_vehicle_track(camera_id, state, calibration_profile=calibration_profile)
-        for state in track_manager.all_tracks()
+        for state in result.track_states
     ]
     return result

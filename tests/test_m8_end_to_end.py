@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from anvesh.pipeline import CameraWindowInput, run_corridor_window
+from anvesh.hypotheses.candidate_vehicle import CandidateVehicleResolution, CandidateVehicleStatus
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.storage.schemas import (
     CameraRole,
@@ -24,6 +25,7 @@ from anvesh.storage.schemas import (
     PropagationObservation,
     VehicleClass,
     VehicleTrack,
+    WorldPosition,
 )
 from anvesh.world.corridor import CameraPlacement, CorridorTopology
 from anvesh.world.corridor_state import UNRANKED_PLACEHOLDER
@@ -289,3 +291,69 @@ def test_wrong_number_of_camera_inputs_rejected():
 def test_duplicate_camera_id_rejected():
     with pytest.raises(ValueError):
         run_corridor_window(WINDOW, (_upstream_input("cam-A"), _downstream_input("cam-A")))
+
+
+# ---------------------------------------------------------------------------
+# 19. candidate_vehicle (Commit 9A -- single-camera lane/speed/candidate
+#     integration): run_corridor_window must also resolve a candidate
+#     vehicle, using the SAME candidate_ranking/evidence_by_camera this
+#     window already produced.
+# ---------------------------------------------------------------------------
+
+
+def _stopped_track(camera_id, suffix="stopped"):
+    """~0.1 m/s over 4.0s -- qualifies as STOPPED for evidence_builder's
+    H2/H3 (same fixture shape as scripts/export_ui_data.py's own
+    `_stopped_track`, duplicated here to keep this test module
+    self-contained/import-free of `scripts/`)."""
+    positions = [(10.0 + 0.05 * i, 0.0, i * 0.5) for i in range(9)]
+    return VehicleTrack(
+        track_id=f"{camera_id}:{suffix}", camera_id=camera_id, first_seen=positions[0][2], last_seen=positions[-1][2],
+        vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.VISIBLE,
+        position_history=[WorldPosition(world_x=x, world_y=y, timestamp=t) for (x, y, t) in positions],
+        speed_estimate=Measurement(value=0.1, error=0.02), motion_space=MotionSpace.WORLD,
+    )
+
+
+def test_candidate_vehicle_resolves_a_single_stopped_track():
+    camera_id = "cam-A"
+    tracks = [_stopped_track(camera_id)]
+    camera_input = _camera_input(camera_id, CameraRole.UPSTREAM, tracks, motion_space=MotionSpace.WORLD)
+    result = run_corridor_window(WINDOW, (camera_input,))
+
+    assert result.candidate_ranking.outcome == CandidateOutcome.RANKED
+    assert result.candidate_ranking.ranked_list[0].hypothesis_id == "H2"
+    assert isinstance(result.candidate_vehicle, CandidateVehicleResolution)
+    assert result.candidate_vehicle.status == CandidateVehicleStatus.RESOLVED
+    assert result.candidate_vehicle.track_id == f"{camera_id}:stopped"
+
+
+def test_candidate_vehicle_is_not_ranked_when_ranking_abstains():
+    empty_input = _camera_input("cam-A", CameraRole.UPSTREAM, [])
+    result = run_corridor_window(WINDOW, (empty_input,))
+    assert result.candidate_ranking.outcome == CandidateOutcome.INSUFFICIENT_EVIDENCE
+    assert result.candidate_vehicle.status == CandidateVehicleStatus.NOT_RANKED
+    assert result.candidate_vehicle.track_id is None
+
+
+def test_candidate_vehicle_uses_the_same_ranking_and_evidence_as_the_result(monkeypatch):
+    """Proves 'same window' by construction, not value coincidence:
+    `resolve_candidate_vehicle` must be called with exactly the
+    `candidate_ranking`/`evidence_by_camera` objects this window's own
+    result carries -- never a separately rebuilt/refetched copy."""
+    import anvesh.pipeline as pipeline_module
+
+    captured = {}
+    original = pipeline_module.resolve_candidate_vehicle
+
+    def _spy(ranking, evidence_by_camera):
+        captured["ranking"] = ranking
+        captured["evidence_by_camera"] = evidence_by_camera
+        return original(ranking, evidence_by_camera)
+
+    monkeypatch.setattr(pipeline_module, "resolve_candidate_vehicle", _spy)
+
+    result = run_corridor_window(WINDOW, (_upstream_input(),))
+
+    assert captured["ranking"] is result.candidate_ranking
+    assert captured["evidence_by_camera"] is result.evidence_by_camera

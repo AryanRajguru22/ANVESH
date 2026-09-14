@@ -1138,3 +1138,267 @@ camera` → `single_camera_result` → `build_ranking` → `resolve_candidate_
 vehicle`, asserting H2 wins and resolves to the real track's ID; a second
 integration test confirms an all-`INSUFFICIENT` evidence set abstains
 (`INSUFFICIENT_EVIDENCE`) and resolves to `NOT_RANKED`.
+
+---
+
+## Commit 9A — Integrate single-camera lane/speed/candidate data (`anvesh/pipeline.py`, `anvesh/perception/pipeline.py`, `scripts/export_ui_data.py`)
+
+**What changed:** Integration only — no evidence math, no lane geometry
+math, no speed math, no candidate-resolution math, no fusion/propagation
+change, no `anvesh/rendering.py` OpenCV drawing, no ANVESH-V0 change, no
+CityFlow dataset change. This is Commit 9a from `ANVESH_COMMIT9_
+INTEGRATION_AUDIT.md` §8: the first time Commits 4 (lane assignment), 6
+(approximate speed), and 7 (candidate-vehicle resolution) are wired into
+a real, single-camera, real-video path end to end, using one real S02
+showcase camera (c006). The two-camera c006+c009 corridor (audit's
+Commit 9b) is explicitly **not** part of this commit.
+
+Three files changed, all purely additive (every new parameter defaults
+to exactly today's behavior):
+
+- **`anvesh/pipeline.py`** — `run_corridor_window` now also calls
+  `hypotheses.candidate_vehicle.resolve_candidate_vehicle(candidate_
+  ranking, evidence_by_camera)` immediately after `build_ranking`, using
+  the SAME local variables already in scope for that window (never
+  rebuilt, never re-fetched by a separate caller — this is what makes
+  "the candidate came from the same window's evidence/ranking" true by
+  construction, verified in `tests/test_m8_end_to_end.py::
+  test_candidate_vehicle_uses_the_same_ranking_and_evidence_as_the_result`
+  via a monkeypatch that captures the exact objects `resolve_candidate_
+  vehicle` was called with and asserts identity, not just equality,
+  against `result.candidate_ranking`/`result.evidence_by_camera`).
+  `AnveshWindowResult` gained one new field, `candidate_vehicle`, at its
+  one existing construction site.
+- **`anvesh/perception/pipeline.py`** — `M1PipelineResult` gained
+  `track_states: list`, populated from `track_manager.all_tracks()`
+  immediately after `finalize()`, alongside (not replacing) the existing
+  `vehicle_tracks` comprehension. This is layered on top of this file's
+  pre-existing, uncommitted `on_frame_tracked` hook (added for the video-
+  demo integration, unrelated to lane/speed/candidate work) — both hunks
+  ride together in this commit because `scripts/export_ui_data.py`
+  already calls `run_m1_pipeline(..., on_frame_tracked=_capture_frame)`,
+  so a commit containing `track_states` without the hook it's layered on
+  would leave `export_ui_data.py` broken at HEAD.
+- **`scripts/export_ui_data.py`** — `real_video_limited_chain` gained two
+  optional parameters, `calibration_profile=None` and `lane_regions=()`,
+  both defaulting to "not supplied" (today's exact behavior for every
+  existing caller — `main()`'s zero-argument call, and `scripts/
+  analyze_video.py`'s existing calls, are both byte-for-byte unaffected).
+
+### Per-frame / per-track / per-window separation (the audit's central finding)
+
+Lane assignment, approximate speed, and candidate-vehicle resolution
+live at three genuinely different granularities, and Commit 9A respects
+all three rather than forcing one shape onto all of them
+(`ANVESH_COMMIT9_INTEGRATION_AUDIT.md` §3–4):
+
+- **Lane assignment — per detection.** `assign_detection_lane` (Commit
+  4) is pure and stateless; it costs one point-in-polygon test and is
+  recomputed live for every captured box, so a vehicle that changes
+  lanes mid-track shows that transition across frames.
+- **Approximate speed — per track, computed once.** `estimate_vehicle_
+  speed` (Commit 6) needs a track's whole `ground_point_trajectory` and
+  is not incremental — recomputing it every frame would be wrong (a
+  speed-math change) and wasteful (O(frames²) per track). It is called
+  exactly once per entry in `M1PipelineResult.track_states`, immediately
+  after `run_m1_pipeline` returns (never inside `on_frame_tracked` — a
+  track's trajectory is not yet finished while that hook is still
+  firing), building a `dict` keyed by the tracker's own **raw** track_id
+  (matching `TrackedDetection.track_id`) and looked up per box. This
+  keying detail matters: `VehicleSpeedEstimate.track_id` (and
+  `CandidateVehicleResolution.track_id`) are camera-**qualified**
+  (`f"{camera_id}:{track_id}"`), but `TrackedDetection.track_id` is
+  **not** — building the lookup dict keyed by the qualified id and then
+  looking it up by the raw id would silently return `None` for every
+  box, with no error anywhere. `tests/test_export_ui_data.py::
+  test_real_video_limited_chain_attaches_lane_and_speed_when_supplied`
+  exists specifically to catch exactly that class of bug (it asserts a
+  real, non-`None` `speed`/`speed_confidence` actually lands on the
+  box, not merely that the code runs without raising).
+- **Candidate-vehicle resolution — per window.** Already established at
+  the `anvesh/pipeline.py` layer above; a red/highlighted vehicle can
+  only change at window boundaries, by construction.
+
+Because of this mismatch, `real_video_limited_chain` is a genuine
+two-pass shape, not a single forward pass: **Pass 1** (`run_m1_pipeline`,
+unchanged inference cost) captures each frame's raw `TrackedDetection`
+list via the existing `on_frame_tracked` hook, exactly as before; only
+after Pass 1 returns does per-track speed get computed. **Pass 2**
+(data-only, no re-inference, no second detector/tracker run) then
+attaches, per already-captured box: a live per-observation lane
+assignment, the already-computed per-track speed estimate looked up by
+track_id, and — at the window level, in `_window_result` — the window's
+already-computed `candidate_vehicle`. No box or window ever recomputes
+evidence, ranking, or a lane/speed value that already exists elsewhere.
+
+### Candidate semantics preserved end to end
+
+`_candidate_vehicle` (new serializer in `export_ui_data.py`) writes
+`CandidateVehicleResolution` honestly: `status` is always exactly one of
+`resolved` / `ambiguous` / `no_vehicle_for_hypothesis` / `not_ranked`
+(Commit 7's own enum, never collapsed into a boolean or omitted), and
+`track_id` is non-null if and only if `status == "resolved"`. Nothing in
+this commit invents a fallback vehicle when the real evidence produces
+none — `tests/test_m8_end_to_end.py::
+test_candidate_vehicle_is_not_ranked_when_ranking_abstains` and the
+bounded c006 smoke test below both exercise this directly.
+
+### c006 single-camera scope — why the boundary is where it is
+
+`scripts/run_s02_c006_showcase.py` (new file) is the **only** file in the
+repository that mentions `s02_c006`, `c006`, or the `E:\traffic dataset`
+CityFlowV2 path (enforced by `tests/test_export_ui_data.py::
+test_generic_modules_have_no_hardcoded_c006_paths`, scoped to the three
+generic modules this commit touches). It composes three already-existing,
+already-tested pieces — `world.lane_config.load_lane_config` (Commit 3),
+`world.calibration.load_cityflow_calibration` (Commit 5), and `export_
+ui_data.real_video_limited_chain` (this commit) — and writes to its own
+output file, `ui/data/anvesh_s02_c006_data.json`, never touching
+`ui/data/anvesh_demo_data.json` (demo.mp4's existing, separately-verified
+export). Every generic module Commit 9A touches takes camera_id/lane
+regions/calibration profile as plain caller-supplied arguments; none of
+them branches on "is this c006."
+
+### Why the two-camera c006+c009 corridor is intentionally not part of this commit
+
+`run_corridor_window` already accepts 1 or 2 `CameraWindowInput`s
+unchanged; a two-camera c006+c009 corridor would require two independent
+M1 passes over two videos of possibly different duration, a shared
+window schedule reconciling them, and `fuse_two_cameras` instead of
+`single_camera_result` — a materially larger, independently-risky
+extension with its own failure modes (clock/frame-rate alignment between
+two independently-decoded videos) that has nothing to do with proving
+the lane/speed/candidate data path itself works. No real `segment_
+length_m`/`CorridorTopology` for the c006/c009 pair is documented
+anywhere in this repository either, so a two-camera attempt right now
+would have to invent corridor geometry rather than use real data — worse,
+not better, than reporting corridor state/propagation/feedback as
+honestly unavailable the way a single-camera `run_corridor_window` call
+already does. This mirrors the audit's own recommendation (§8) and this
+project's established convention of one concern per commit (eight prior
+commits, each independently reviewable).
+
+### Backward compatibility
+
+Every new parameter — `AnveshWindowResult.candidate_vehicle` (always
+populated, but additive: no existing caller enumerates its fields),
+`M1PipelineResult.track_states` (default-empty list, nothing existing
+reads it), `real_video_limited_chain(calibration_profile=None,
+lane_regions=())` — defaults to reproducing exactly today's behavior.
+`demo.mp4`'s export (`scripts/export_ui_data.py`'s own `main()`) and
+`scripts/analyze_video.py`'s existing calls are unaffected: with no
+calibration profile supplied, no speed is computed and every box's
+`speed`/`speed_status`/`speed_confidence` keys stay absent; with no lane
+regions supplied, no lane assignment is attempted and every box's
+`lane`/`lane_status` keys stay absent — verified directly by
+`tests/test_export_ui_data.py::
+test_real_video_limited_chain_omits_lane_speed_keys_by_default`. The
+three existing synthetic dashboard scenarios (`scenario_cross_camera_
+agreement`/`scenario_camera_disagreement`/`scenario_reliability_
+degradation`) are untouched at their call sites; they now also carry a
+`candidate_vehicle` in their exported JSON as a natural consequence of
+`AnveshWindowResult` always populating that field — a feature, not a
+regression (no existing asserted value in `tests/test_export_ui_data.py`
+changed).
+
+### Limitations (explicitly out of scope for this commit)
+
+- **First real WORLD-space evidence run on real, noisy YOLO+ByteTrack
+  tracks.** Every prior WORLD-space evidence/hypothesis exercise (M2's
+  own tests, this project's Commits 1–8) used clean synthetic
+  trajectories. c006's real tracks are the first to feed H2/H3
+  (stopped-vehicle) evidence and the WORLD-space density branch of
+  `aggregate_traffic_state` end to end. This commit observes that
+  behavior via the bounded smoke test below; it does not retune any
+  evidence threshold to make real footage "look better" — that would be
+  an evidence-math change, explicitly forbidden here.
+- **No per-box `is_candidate` flag.** `anvesh.rendering.is_resolved_
+  candidate` exists and is already tested, but wiring it into every box
+  would require mapping each frame to the window whose candidate applies
+  to it — a rendering-layer decision deferred to whichever later commit
+  actually builds a UI highlight (this commit's goal is the data path
+  and dashboard JSON only, per requirement 8).
+- **No standalone annotated video.** `anvesh/rendering.py`'s OpenCV
+  drawing (`render_annotated_frame`) is not called anywhere in this
+  commit — the dashboard JSON path is lower-risk and already proven
+  end-to-end for real video (Chain 3, audit §1); an actual annotated-MP4
+  output remains a reasonable later commit (audit §6, §8).
+- **c006 only, not c009, not the corridor.** See above.
+
+### Bounded c006 smoke test (real dataset, not part of the ordinary unit suite)
+
+`python scripts/run_s02_c006_showcase.py --sample-seconds 30` against the
+real `E:\traffic dataset\validation\S02\c006\vdo.avi` (1920x1080 @ 10fps,
+211.0s total; the first 30.0s trimmed and analyzed — a small,
+representative slice, not the full video):
+
+| Metric | Result |
+|---|---|
+| Frames processed | 300 |
+| Tracks (first-seen within the sample) | 102 |
+| Lane: `assigned` | 652 |
+| Lane: `unknown_outside_regions` | 3,274 |
+| Speed: `approximate` | 74 |
+| Speed: `unavailable` | 28 |
+| Speed: `validated` | 0 (expected — `CITYFLOW_SUPPLIED` calibration never validates, Commit 6) |
+| Candidate: `no_vehicle_for_hypothesis` | 2 windows (H1 — downstream/occupancy pattern, no vehicle to name) |
+| Candidate: `not_ranked` | 1 window (`INSUFFICIENT_EVIDENCE`) |
+| Candidate: `resolved` | 0 |
+| Errors/warnings | none |
+
+Two honest observations, reported rather than "fixed" (both are out of
+scope for this commit — evidence math and lane geometry math are
+explicitly untouched):
+
+1. **No `RESOLVED` candidate in this sample.** Both ranked windows'
+   top-ranked hypothesis was H1 (a congestion/occupancy pattern, which
+   `evidence_builder.py` never attaches `supporting_track_refs` to —
+   `NO_VEHICLE_FOR_HYPOTHESIS` is the correct, honest outcome here, not a
+   bug). This confirms `resolve_candidate_vehicle` does exactly what
+   Commit 7 designed it to do on real data: it never invents a vehicle
+   when the winning hypothesis's own evidence doesn't name one.
+2. **Most detections (3,274 of 3,926) fall outside c006's one configured
+   lane region.** `configs/lanes/s02_c006.toml` currently defines lane
+   geometry for the near-side carriageway only; c006's view also
+   contains a far-side carriageway and background/cross traffic this
+   commit's single region does not cover. This is a lane-*geometry*
+   authoring gap (Commit 3's own scope), not a lane-*assignment* defect
+   — `assign_detection_lane` is correctly reporting `UNKNOWN_OUTSIDE_
+   REGIONS` for every point genuinely outside the configured polygon,
+   exactly its documented contract. Expanding `s02_c006.toml`'s regions
+   is future work, not part of Commit 9A (lane geometry/config is
+   explicitly out of scope here).
+
+### Tests added
+
+- `tests/perception/test_pipeline_end_to_end.py` — one new test,
+  `test_track_states_retains_raw_track_state_per_vehicle_track`, asserting
+  `M1PipelineResult.track_states` is populated one-to-one with
+  `vehicle_tracks` (by raw vs. camera-qualified track_id) and carries a
+  real `ground_point_trajectory`.
+- `tests/test_m8_end_to_end.py` — three new tests: a single stopped WORLD
+  track resolves `RESOLVED` with the correct `track_id`; an empty camera
+  input's `INSUFFICIENT_EVIDENCE` ranking resolves `NOT_RANKED`; and a
+  monkeypatch-based identity check proving `resolve_candidate_vehicle` is
+  called with the exact `candidate_ranking`/`evidence_by_camera` objects
+  the result carries (`is`, not `==`).
+- `tests/test_export_ui_data.py` — eight new tests covering: `_box_entry`
+  gaining lane/speed keys only when supplied; `_window_result` including
+  a JSON-serializable `candidate_vehicle`; `real_video_limited_chain`
+  staying byte-for-byte 4-key-box-shaped when the two new parameters are
+  omitted; the same function attaching real lane/speed data (via a
+  monkeypatched, non-GPU `run_m1_pipeline`) when they are supplied,
+  including a direct check that speed actually reaches the box (guarding
+  against the raw-vs-qualified track_id keying bug described above); the
+  WORLD/IMAGE motion-space branch verified against the actual argument
+  `aggregate_traffic_state` receives (both with and without calibration);
+  and a scan confirming the three generic modules this commit touches
+  contain no hardcoded c006/dataset-path value.
+- `tests/test_run_s02_c006_showcase.py` (new file, 7 tests) — the
+  camera-specific showcase script's config-resolution and reporting logic
+  only (sibling-`calibration.txt` path arithmetic against a fake
+  lane-config object under `tmp_path`, and the `_*_counts` aggregation
+  helpers), never the real dataset or YOLO — the real run is the smoke
+  test above.
+
+Full suite: 590 tests passing (571 before this commit + 19 new).

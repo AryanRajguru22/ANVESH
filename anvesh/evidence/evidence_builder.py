@@ -34,6 +34,17 @@ Documented V1 limitations (by design, not oversight):
     `camera_role`, though: the blueprint's own Part 7 signature says the
     upstream camera is "most informative" for demand-surge evidence, and
     that much *is* checkable without trend data.
+  - H5's graded branch is NONE unless the caller supplies
+    `EvidenceThresholds.capacity_flow_veh_per_s`. "Elevated" is a
+    comparative claim and V1 has no historical volume baseline for an
+    arbitrary camera to compare against -- the same reason H6 is always
+    NONE. This is the project's own M6 finding (see configs/experiment/
+    m6_real_camera_thresholds.toml, which records that no defensible
+    "elevated" cutoff could be derived for either real camera); scoring
+    against an absolute per-window count instead would both smuggle in
+    that unfounded cutoff and silently change meaning with the window
+    length. The stopped-vehicle CONTRADICTS branch needs no baseline and
+    is still evaluated.
 """
 
 from __future__ import annotations
@@ -77,7 +88,24 @@ class EvidenceThresholds:
 
     stopped_speed_m_per_s: float = 1.0  # at/below this (WORLD only), a track counts as "stopped"
     min_dwell_seconds: float = 3.0  # minimum duration to count as sustained-stopped, not a momentary slow-down
-    elevated_vehicle_count: int = 8  # single-window proxy for "elevated inflow" (see module docstring)
+
+    # H5 ("elevated inflow") is a COMPARATIVE claim -- "elevated" is
+    # meaningless without a per-site reference for what normal inflow is.
+    # `capacity_flow_veh_per_s` is that reference, and it is caller-supplied
+    # (real or explicitly-synthetic), never defaulted: the same discipline
+    # `CalibrationProfile`/`segment_length_m` already follow. When it is
+    # None, H5's graded branch reports NONE completeness rather than
+    # scoring against an unfounded cutoff -- see `_evidence_h5`.
+    capacity_flow_veh_per_s: float = None  # site capacity flow, vehicles/second
+    elevated_flow_fraction_of_capacity: float = 0.5  # flow at/above this fraction of capacity is "elevated"
+
+    def __post_init__(self) -> None:
+        if self.capacity_flow_veh_per_s is not None and self.capacity_flow_veh_per_s <= 0:
+            raise ValueError(f"capacity_flow_veh_per_s must be > 0 when supplied, got {self.capacity_flow_veh_per_s}")
+        if not (0.0 < self.elevated_flow_fraction_of_capacity <= 1.0):
+            raise ValueError(
+                f"elevated_flow_fraction_of_capacity must be within (0, 1], got {self.elevated_flow_fraction_of_capacity}"
+            )
 
 
 def _stopped_tracks(tracks: list, motion_space: MotionSpace, thresholds: EvidenceThresholds) -> list:
@@ -289,17 +317,52 @@ def _evidence_h4(camera_id, window, reliability):
 
 
 def _evidence_h5(camera_id, window, camera_role, ts, stopped, speed_available, thresholds, reliability):
-    elevated = ts.vehicle_count >= thresholds.elevated_vehicle_count
     has_stopped = speed_available and len(stopped) > 0
+    capacity = thresholds.capacity_flow_veh_per_s
     # Part 7: "Upstream camera is most informative" for demand-surge evidence --
     # a downstream camera only sees the *result* of upstream demand, so its
-    # inflow count is a weaker signal for this specific hypothesis.
+    # inflow is a weaker signal for this specific hypothesis.
     role_weight = 1.0 if camera_role == CameraRole.UPSTREAM else 0.5
 
+    # A stopped vehicle contradicts "free-flowing demand surge" regardless of
+    # whether a capacity reference exists -- that branch needs no baseline, so
+    # it is still decided here rather than being reported unavailable.
     if has_stopped:
-        score, direction = 0.15, EvidenceDirection.CONTRADICTS
-    elif elevated:
-        base = 0.6 + 0.4 * min(1.0, ts.vehicle_count / (2 * thresholds.elevated_vehicle_count))
+        return _make_evidence(
+            evidence_id=f"{camera_id}:H5:{window[0]}-{window[1]}",
+            camera_id=camera_id, window=window, hypothesis_id="H5",
+            score=0.15, direction=EvidenceDirection.CONTRADICTS,
+            completeness=EvidenceCompleteness.FULL, supporting_track_refs=[],
+            evidence_type="elevated_inflow_no_obstruction", measured_value=ts.flow_rate,
+            reliability=reliability, source="track_stopped_detection",
+            metadata={
+                "flow_rate_veh_per_s": ts.flow_rate,
+                "stopped_track_count": len(stopped),
+                "camera_role": camera_role.value,
+            },
+        )
+
+    if capacity is None:
+        return _make_evidence(
+            evidence_id=f"{camera_id}:H5:{window[0]}-{window[1]}",
+            camera_id=camera_id, window=window, hypothesis_id="H5",
+            score=0.0, direction=EvidenceDirection.INSUFFICIENT,
+            completeness=EvidenceCompleteness.NONE, supporting_track_refs=[],
+            evidence_type="elevated_inflow_no_obstruction", measured_value=ts.flow_rate,
+            reliability=reliability, source="unavailable",
+            metadata={
+                "flow_rate_veh_per_s": ts.flow_rate,
+                "camera_role": camera_role.value,
+                "reason": (
+                    "'elevated' inflow is a comparative claim; grading it requires a caller-supplied "
+                    "capacity_flow_veh_per_s reference for this site, and none was provided"
+                ),
+            },
+        )
+
+    elevated_threshold = thresholds.elevated_flow_fraction_of_capacity * capacity
+    if ts.flow_rate >= elevated_threshold:
+        base = 0.6 + 0.4 * min(1.0, ts.flow_rate / capacity)
         score = min(1.0, base * role_weight)
         direction = EvidenceDirection.SUPPORTS
     else:
@@ -314,12 +377,13 @@ def _evidence_h5(camera_id, window, camera_role, ts, stopped, speed_available, t
         completeness=EvidenceCompleteness.FULL,
         supporting_track_refs=[],
         evidence_type="elevated_inflow_no_obstruction",
-        measured_value=ts.vehicle_count,
+        measured_value=ts.flow_rate,
         reliability=reliability,
         source="traffic_state_aggregation",
         metadata={
-            "vehicle_count": ts.vehicle_count,
-            "elevated_threshold": thresholds.elevated_vehicle_count,
+            "flow_rate_veh_per_s": ts.flow_rate,
+            "capacity_flow_veh_per_s": capacity,
+            "elevated_threshold_veh_per_s": elevated_threshold,
             "camera_role": camera_role.value,
         },
     )

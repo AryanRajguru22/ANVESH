@@ -36,11 +36,15 @@
 #     geometric capacity of ~15-18), not a miscalibrated threshold.
 #
 # THRESHOLDS DELIBERATELY LEFT UNCHANGED (no independent justification found):
-#   - EvidenceThresholds.elevated_vehicle_count (H5, default 8): no
-#     historical/reference traffic-volume baseline exists for either camera
-#     to derive an "elevated" cutoff from; any value would either restate
-#     the geometric capacity above (too close to reverse-engineering an
-#     outcome) or be an unsupported guess. Left at the project default.
+#   - EvidenceThresholds.capacity_flow_veh_per_s (H5): no historical/
+#     reference traffic-volume baseline exists for either camera to derive
+#     an "elevated" cutoff from; any value would either restate the
+#     geometric capacity above (too close to reverse-engineering an
+#     outcome) or be an unsupported guess. Left unset, which is now what
+#     the code itself requires: H5's graded branch reports NONE rather
+#     than scoring against an unfounded cutoff. (This finding is why the
+#     former absolute `elevated_vehicle_count = 8` default was removed --
+#     it was exactly the unsupported guess this note warned against.)
 #   - CongestionThresholds (free_speed_m_per_s, congested_speed_m_per_s,
 #     high_occupancy, low_occupancy): no verifiable traffic-engineering
 #     standard was available to cite for these two specific cameras. Left

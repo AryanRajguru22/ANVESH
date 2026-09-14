@@ -18,11 +18,28 @@ segment_length_m` is a real vehicles/metre figure. Otherwise `density` is
 a documented, explicitly non-metric PROXY (`vehicle_count` itself, i.e.
 "vehicles per observed view", vehicles per pixel-span is not attempted
 since no reliable observed-pixel-extent is available either) -- flagged
-as `DataQuality.ESTIMATED`, never presented as a real density. Occupancy
-is a proxy too (`vehicle_count / max_capacity_vehicles`, a documented
-config constant) since V1 has no per-camera occupancy-length geometry;
+as `DataQuality.ESTIMATED`, never presented as a real density.
 `flow_rate` (vehicles / real elapsed seconds) is the one quantity here
 that is always exactly measurable regardless of calibration.
+
+OCCUPANCY -- why the numerator is `mean_concurrency`, not `vehicle_count`:
+Occupancy asks "how much of the view is occupied", so its numerator must
+be a count of vehicles PRESENT, not a count of vehicles that passed
+through. `vehicle_count` is the latter: it counts every distinct track
+overlapping the window, so on through-traffic it grows with the window
+length and with vehicle speed -- faster free-flowing traffic pushes more
+distinct vehicles through the window and would RAISE an occupancy built
+on it, inverting the quantity's meaning. `mean_concurrency` (the
+time-average of how many tracks are simultaneously in view, i.e. total
+in-window track dwell / window duration) is the presence-count occupancy
+actually needs: it is invariant to window length for steady traffic and
+falls, correctly, when the same demand moves through faster. Occupancy
+remains a capacity-based PROXY (`mean_concurrency / max_capacity_vehicles`,
+a documented config constant), since V1 still has no per-camera
+occupancy-length geometry -- but it is now dimensionally the right kind
+of quantity to compare against that capacity. `vehicle_count`,
+`flow_rate`, and `density` are unchanged: they are honest throughput
+measures and other milestones consume them as such.
 
 SPEED -- per `motion_space`: `mean_speed.value` is m/s when a track's
 camera is calibrated, px/s otherwise -- callers must not mix tracks from
@@ -65,6 +82,7 @@ class TrafficStateAggregation:
     speed_quality: DataQuality
     density_quality: DataQuality
     occupancy_quality: DataQuality
+    mean_concurrency: float = 0.0  # the occupancy numerator, exposed for audit (see module docstring)
 
 
 @dataclass(frozen=True)
@@ -168,6 +186,28 @@ def _tracks_overlapping_window(tracks: list, window_start: float, window_end: fl
     return [t for t in tracks if t.first_seen < window_end and t.last_seen > window_start]
 
 
+def _mean_concurrency(tracks: list, window_start: float, window_end: float) -> float:
+    """Time-averaged number of tracks simultaneously present in the window.
+
+    Sum of each track's dwell INSIDE the window, divided by the window's
+    duration -- the continuous-time equivalent of averaging a per-frame
+    "how many vehicles are on screen right now" count, computed from
+    `first_seen`/`last_seen` alone so it needs no frame-level data. A
+    track spanning the whole window contributes 1.0; one present for half
+    of it contributes 0.5. Not clamped: it is a vehicle count, and
+    clamping belongs to the capacity ratio in `aggregate_traffic_state`,
+    not here.
+    """
+    window_duration = window_end - window_start
+    if window_duration <= 0:
+        return 0.0
+    dwell = sum(
+        max(0.0, min(t.last_seen, window_end) - max(t.first_seen, window_start))
+        for t in tracks
+    )
+    return dwell / window_duration
+
+
 def aggregate_traffic_state(
     camera_id: str,
     window_start: float,
@@ -194,6 +234,7 @@ def aggregate_traffic_state(
     overlapping = _tracks_overlapping_window(tracks, window_start, window_end)
     window_duration = window_end - window_start
     vehicle_count = len(overlapping)
+    mean_concurrency = _mean_concurrency(overlapping, window_start, window_end)
     class_counts = dict(Counter(t.vehicle_class for t in overlapping))
     contributing_track_ids = tuple(t.track_id for t in overlapping)
 
@@ -213,7 +254,7 @@ def aggregate_traffic_state(
         mean_speed = Measurement(value=mean_speed_value, error=speed_error)
         speed_quality = DataQuality.OBSERVED
 
-        occupancy = min(1.0, vehicle_count / max_capacity_vehicles)
+        occupancy = min(1.0, mean_concurrency / max_capacity_vehicles)
         occupancy_quality = DataQuality.ESTIMATED  # a capacity-based proxy, not a measured occupied-length fraction
 
         if segment_length_m is not None and motion_space == MotionSpace.WORLD:
@@ -248,4 +289,5 @@ def aggregate_traffic_state(
         speed_quality=speed_quality,
         density_quality=density_quality,
         occupancy_quality=occupancy_quality,
+        mean_concurrency=mean_concurrency,
     )

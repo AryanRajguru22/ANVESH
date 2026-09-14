@@ -155,9 +155,9 @@ def test_max_capacity_override_changes_occupancy_but_not_vehicle_counts():
 
 
 def test_build_evidence_thresholds_changes_only_the_named_field():
-    built = rwv._build_evidence_thresholds({"elevated_vehicle_count": 3})
+    built = rwv._build_evidence_thresholds({"capacity_flow_veh_per_s": 3.0})
     default = EvidenceThresholds()
-    assert built.elevated_vehicle_count == 3
+    assert built.capacity_flow_veh_per_s == 3.0
     assert built.stopped_speed_m_per_s == default.stopped_speed_m_per_s
     assert built.min_dwell_seconds == default.min_dwell_seconds
 

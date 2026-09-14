@@ -6,6 +6,7 @@ from anvesh.evidence.evidence_builder import EvidenceDirection, EvidenceItem
 from anvesh.fusion.ds_fusion import (
     BeliefMassAssignment,
     DEFAULT_LAMBDA_SHARED_WHEN_SHARED,
+    belief,
     confidence_tier_for,
     dempster_combine,
     discount_by_reliability,
@@ -328,3 +329,31 @@ def test_single_camera_result_is_undiscounted_raw_bpa():
     assert result.camera_ids == ("cam-A",)
     assert result.final_bpa.masses["H1"] == pytest.approx(0.6)
     assert result.method == "single_camera_v1"
+
+
+def test_uncheckable_hypotheses_leave_ignorance_mass_on_theta():
+    """Regression guard for the saturation defect: when several hypotheses
+    are NONE-complete, the BPA must retain ignorance rather than normalizing
+    it away. Two hypotheses each saturated at 1.0 previously summed to 2.0,
+    scaled to 0.5/0.5 and left theta_mass == 0 -- i.e. the engine reported
+    total certainty while four of six hypotheses were unassessable."""
+    saturated = evidence_items_to_bpa((
+        _evidence_item("H1", 1.0, EvidenceDirection.SUPPORTS),
+        _evidence_item("H5", 1.0, EvidenceDirection.SUPPORTS),
+    ))
+    assert saturated.theta_mass == pytest.approx(0.0)
+
+    unsaturated = evidence_items_to_bpa((
+        _evidence_item("H1", 0.85, EvidenceDirection.SUPPORTS),
+        _evidence_item("H5", 0.0, EvidenceDirection.INSUFFICIENT, EvidenceCompleteness.NONE),
+    ))
+    assert unsaturated.theta_mass == pytest.approx(0.15)
+    assert unsaturated.masses["H1"] == pytest.approx(0.85)
+
+
+def test_belief_and_plausibility_separate_once_ignorance_exists():
+    bpa = evidence_items_to_bpa((_evidence_item("H1", 0.85, EvidenceDirection.SUPPORTS),))
+    bel, pl = belief(bpa), plausibility(bpa)
+    assert bel["H1"] == pytest.approx(0.85)
+    assert pl["H1"] == pytest.approx(1.0)  # belief + theta
+    assert pl["H1"] > bel["H1"]

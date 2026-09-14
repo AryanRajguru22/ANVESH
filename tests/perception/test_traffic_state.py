@@ -270,3 +270,69 @@ def test_aggregate_traffic_state_drives_the_tracker():
 
     result2 = aggregate_traffic_state("cam-A", 10.0, 20.0, heavy_tracks, MotionSpace.WORLD, tracker)
     assert result2.traffic_state.congestion_level == CongestionLevel.CONGESTED
+
+
+# ---------------------------------------------------------------------------
+# Occupancy semantics: the numerator is presence (mean concurrency), not
+# throughput (vehicle_count). See traffic_state.py's OCCUPANCY docstring.
+# ---------------------------------------------------------------------------
+
+
+def test_occupancy_numerator_is_mean_concurrency_not_overlap_count():
+    """20 vehicles each present for 1s of a 10s window are never more than a
+    couple of vehicles on the road at once -- occupancy must reflect that, not
+    report a full road because 20 distinct vehicles were counted."""
+    # 20 staggered 1.0s tracks, each entirely inside the 10s window
+    tracks = [_track(str(i), float(i) * 0.45, float(i) * 0.45 + 1.0, speed_value=10.0) for i in range(20)]
+    result = aggregate_traffic_state("cam-A", 0.0, 10.0, tracks, MotionSpace.WORLD, CongestionStateTracker())
+
+    assert result.traffic_state.vehicle_count == 20  # throughput is unchanged and still honest
+    assert result.mean_concurrency == pytest.approx(2.0)  # 20 tracks x 1.0s dwell / 10s
+    assert result.traffic_state.occupancy == pytest.approx(0.1)  # 2.0 / capacity 20, NOT 20/20
+
+
+def test_occupancy_is_invariant_to_window_length_for_steady_traffic():
+    """The same steady traffic measured over 10s and over 20s must give the
+    same occupancy. The old vehicle_count numerator doubled instead."""
+    tracks = [_track(str(i), float(i), float(i) + 2.0, speed_value=10.0) for i in range(20)]
+    short = aggregate_traffic_state("cam-A", 2.0, 12.0, tracks, MotionSpace.WORLD, CongestionStateTracker())
+    long = aggregate_traffic_state("cam-A", 2.0, 22.0, tracks, MotionSpace.WORLD, CongestionStateTracker())
+
+    assert short.traffic_state.vehicle_count != long.traffic_state.vehicle_count  # throughput does scale
+    assert short.traffic_state.occupancy == pytest.approx(long.traffic_state.occupancy, abs=0.02)
+
+
+def test_equal_throughput_different_dwell_gives_different_occupancy():
+    """Same number of vehicles through the window, but one set lingers 4x as
+    long -- the slower, denser case must read as more occupied."""
+    quick = [_track(f"q{i}", float(i), float(i) + 1.0, speed_value=10.0) for i in range(8)]
+    slow = [_track(f"s{i}", float(i), float(i) + 4.0, speed_value=2.0) for i in range(8)]
+    q = aggregate_traffic_state("cam-A", 0.0, 10.0, quick, MotionSpace.WORLD, CongestionStateTracker())
+    s = aggregate_traffic_state("cam-A", 0.0, 10.0, slow, MotionSpace.WORLD, CongestionStateTracker())
+
+    assert q.traffic_state.vehicle_count == s.traffic_state.vehicle_count
+    assert s.traffic_state.occupancy > q.traffic_state.occupancy
+
+
+def test_full_span_tracks_keep_the_previous_occupancy_exactly():
+    """Regression guard for the synthetic scenarios: every hand-authored
+    fixture builds tracks spanning the whole window, where mean concurrency
+    equals vehicle_count, so their verified numbers must not move."""
+    tracks = [_track(str(i), 0.0, 10.0, speed_value=2.0) for i in range(15)]
+    result = aggregate_traffic_state("cam-A", 0.0, 10.0, tracks, MotionSpace.WORLD, CongestionStateTracker())
+
+    assert result.mean_concurrency == pytest.approx(15.0)
+    assert result.traffic_state.occupancy == pytest.approx(15 / 20)  # identical to the old formula
+
+
+def test_occupancy_still_clamps_at_full_capacity():
+    tracks = [_track(str(i), 0.0, 10.0, speed_value=1.0) for i in range(40)]
+    result = aggregate_traffic_state("cam-A", 0.0, 10.0, tracks, MotionSpace.WORLD, CongestionStateTracker())
+    assert result.traffic_state.occupancy == 1.0
+
+
+def test_mean_concurrency_counts_only_the_in_window_part_of_a_track():
+    """A track straddling the window boundary contributes only its overlap."""
+    tracks = [_track("straddler", 5.0, 25.0, speed_value=5.0)]  # 5s of a 10s window
+    result = aggregate_traffic_state("cam-A", 0.0, 10.0, tracks, MotionSpace.WORLD, CongestionStateTracker())
+    assert result.mean_concurrency == pytest.approx(0.5)

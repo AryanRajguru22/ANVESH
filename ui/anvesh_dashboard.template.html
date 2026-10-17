@@ -1,0 +1,1638 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ANVESH Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script id="tailwind-config">
+tailwind.config = {
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        "surface": "#0c141f", "surface-dim": "#0c141f", "surface-bright": "#323a46",
+        "surface-container-lowest": "#070f19", "surface-container-low": "#141c27",
+        "surface-container": "#18202b", "surface-container-high": "#232a36",
+        "surface-container-highest": "#2d3541", "surface-variant": "#2d3541",
+        "on-surface": "#dbe3f3", "on-surface-variant": "#bdc8d1",
+        "inverse-surface": "#dbe3f3", "inverse-on-surface": "#29313d",
+        "outline": "#87929a", "outline-variant": "#3e484f",
+        "primary": "#8ed5ff", "on-primary": "#00354a", "primary-container": "#38bdf8", "on-primary-container": "#004965",
+        "secondary": "#4edea3", "on-secondary": "#003824", "secondary-container": "#00a572", "on-secondary-container": "#00311f",
+        "tertiary": "#ffc174", "on-tertiary": "#472a00", "tertiary-container": "#f59e0b", "on-tertiary-container": "#613b00",
+        "error": "#ef4444", "on-error": "#070d14", "error-container": "#93000a", "on-error-container": "#ffdad6",
+        "background": "#0c141f", "on-background": "#dbe3f3"
+      },
+      fontFamily: {
+        sans: ["Hanken Grotesk", "-apple-system", "sans-serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "monospace"]
+      },
+      fontSize: {
+        "body-sm": ["11px", { lineHeight: "16px", letterSpacing: "0.01em" }],
+        "label-caps": ["9px", { lineHeight: "12px", letterSpacing: "0.08em", fontWeight: "700" }],
+        "body-md": ["13px", { lineHeight: "18px" }],
+        "data-lg": ["16px", { lineHeight: "20px", letterSpacing: "-0.02em", fontWeight: "600" }],
+        "headline-lg": ["18px", { lineHeight: "24px", letterSpacing: "0.04em", fontWeight: "700" }],
+        "data-md": ["12px", { lineHeight: "16px", letterSpacing: "-0.01em", fontWeight: "500" }],
+        "data-sm": ["10px", { lineHeight: "14px" }],
+        "headline-sm": ["13px", { lineHeight: "18px", letterSpacing: "0.02em", fontWeight: "600" }],
+        "headline-md": ["15px", { lineHeight: "20px", letterSpacing: "0.02em", fontWeight: "600" }],
+        "label-sm": ["11px", { lineHeight: "14px", letterSpacing: "0.02em", fontWeight: "500" }]
+      },
+      spacing: { "2xs": "2px", xs: "4px", sm: "8px", md: "12px", lg: "16px", xl: "24px" }
+    }
+  }
+};
+</script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body { overscroll-behavior: none; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #070f19; }
+  ::-webkit-scrollbar-thumb { background: #2a3b50; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  a { text-decoration: none; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body class="bg-background font-sans text-on-surface antialiased selection:bg-primary selection:text-on-primary">
+
+<header class="fixed top-0 left-0 right-0 h-[60px] z-50 bg-surface-container-lowest/90 backdrop-blur-xl border-b border-outline-variant/30 flex items-center gap-lg px-lg overflow-x-auto">
+  <div class="flex items-center gap-lg shrink-0">
+    <div class="flex flex-col">
+      <div class="flex items-center gap-sm">
+        <span class="font-mono text-data-lg text-primary tracking-widest font-bold">ANVESH</span>
+        <span class="px-xs py-2xs bg-surface-container-high text-on-surface-variant font-mono text-label-caps uppercase border border-outline-variant/40">Core</span>
+      </div>
+      <span class="font-mono text-label-sm text-on-surface-variant/70 tracking-tight">Traffic Intelligence &amp; Forensics</span>
+    </div>
+    <div class="h-6 w-px bg-outline-variant/30"></div>
+    <div class="flex items-center bg-surface-container-low p-2xs rounded border border-outline-variant/30" id="mode-seg" role="group" aria-label="Data source mode">
+      <button class="flex items-center gap-xs px-sm py-2xs rounded font-mono text-label-sm" data-mode="real" type="button"><span class="w-1.5 h-1.5 rounded-full"></span>Real Video Replay</button>
+      <button class="flex items-center gap-xs px-sm py-2xs rounded font-mono text-label-sm" data-mode="showcase" type="button"><span class="w-1.5 h-1.5 rounded-full"></span>V1 Dataset Showcase</button>
+      <button class="flex items-center gap-xs px-sm py-2xs rounded font-mono text-label-sm" data-mode="synthetic" type="button"><span class="w-1.5 h-1.5 rounded-full"></span>Synthetic Demonstration</button>
+    </div>
+  </div>
+  <div class="flex items-center gap-sm px-md py-xs bg-surface-container-lowest border border-outline-variant/20 rounded font-mono text-data-sm shrink-0" id="topbar-status"></div>
+  <div class="flex-1 min-w-[8px]"></div>
+  <button class="flex items-center gap-xs px-md py-xs bg-surface-container-low hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant/40 font-mono text-label-sm transition-colors shrink-0" id="export-btn" type="button" title="Download the real ANVESH engine JSON backing the current screen">
+    <span class="material-symbols-outlined text-[16px]">ios_share</span>Export Telemetry JSON
+  </button>
+</header>
+
+<aside class="fixed left-0 top-[60px] bottom-0 w-[240px] bg-surface-container-lowest/95 backdrop-blur-2xl border-r border-outline-variant/30 z-40 flex flex-col justify-between overflow-y-auto">
+  <div class="py-md">
+    <div class="px-md pb-xs"><span class="font-mono text-label-caps uppercase text-outline tracking-wider">Operational Modules</span></div>
+    <nav class="space-y-2xs" id="nav-modules"></nav>
+    <div class="my-md border-t border-outline-variant/20 mx-md"></div>
+    <div class="px-md pb-xs"><span class="font-mono text-label-caps uppercase text-outline tracking-wider">Synthetic Scenarios</span></div>
+    <nav class="space-y-2xs" id="nav-scenarios"></nav>
+  </div>
+  <div class="p-md border-t border-outline-variant/30 bg-surface-container-lowest/60 flex items-center justify-between">
+    <div class="flex flex-col">
+      <span class="font-mono text-label-caps text-outline">DATA SOURCE</span>
+      <span class="font-mono text-data-sm text-on-surface-variant" id="sidebar-source-note">Static export</span>
+    </div>
+    <span class="material-symbols-outlined text-outline-variant text-[18px]">description</span>
+  </div>
+</aside>
+
+<div class="pl-[240px]">
+  <main class="relative pt-[60px] min-h-screen bg-background text-on-surface">
+    <div id="view-root"></div>
+  </main>
+</div>
+
+<script>
+/* Built by scripts/build_ui_artifact.py, which replaces both placeholders
+ * below with a real JSON literal and a real data: URI. If this file is
+ * opened as-is (template not built), the placeholder tokens are not valid
+ * JS, so both assignments throw and are caught here -- anvesh-app-6's boot
+ * sequence then falls back to fetch()ing the same files the build script
+ * embeds, for local dev preview without a full rebuild. */
+let ANVESH_DATA, VIDEO_SRC;
+try {
+  ANVESH_DATA = __ANVESH_DATA_JSON__;
+  VIDEO_SRC = "__ANVESH_VIDEO_DATA_URI__";
+} catch (e) {
+  ANVESH_DATA = undefined;
+  VIDEO_SRC = undefined;
+}
+</script>
+<script id="anvesh-app">
+"use strict";
+
+/* =========================================================================
+ * Constants -- shared vocabulary, and the two build-time constants
+ * (WINDOW_SECONDS, SEGMENT_LENGTH_M) that scripts/export_ui_data.py itself
+ * hardcodes but does not re-serialize into every window object.
+ * ========================================================================= */
+
+const WINDOW_SECONDS = 10.0;
+const SEGMENT_LENGTH_M = 100.0; // matches scripts/export_ui_data.py SEGMENT_LENGTH_M
+
+const HYPOTHESES = {
+  H1: "Downstream bottleneck", H2: "Stopped / disabled vehicle", H3: "Collision-like obstruction",
+  H4: "Lane blockage (non-incident)", H5: "Upstream demand surge", H6: "Signal / intersection restriction",
+};
+const CONGESTION_BADGE = { free_flow: "good", building: "warn", congested: "bad", dissipating: "info" };
+const CONGESTION_LABEL = { free_flow: "Free flow", building: "Building", congested: "Congested", dissipating: "Dissipating" };
+const TIER_COLOR = { high: "good", medium: "warn", low: "neutral" };
+const OUTCOME_LABEL = { ranked: "Ranked", insufficient_evidence: "Insufficient evidence", high_conflict: "High conflict" };
+const OUTCOME_COLOR = { ranked: "info", insufficient_evidence: "neutral", high_conflict: "bad" };
+const FEEDBACK_COLOR = { confirmed: "good", partial: "warn", contradicted: "bad", evidence_missing: "neutral" };
+const DIRECTION_LABEL = { supports: "Supports", contradicts: "Contradicts", neutral: "Neutral", insufficient: "Insufficient" };
+const DIRECTION_COLOR = { supports: "good", contradicts: "bad", neutral: "neutral", insufficient: "neutral" };
+const COMPLETENESS_LABEL = { full: "Full", partial: "Partial", none: "None" };
+
+const COLOR_HEX = { good: "#10b981", warn: "#f59e0b", bad: "#ef4444", info: "#38bdf8", neutral: "#64748b" };
+
+/* V1 Dataset Showcase vocabulary (AICity/CityFlow S02 c006 -- a SEPARATE
+ * artifact from ANVESH_DATA.real_video/demo.mp4, never merged with it).
+ * See anvesh.world.lane_geometry.LaneAssignmentStatus and
+ * anvesh.perception.speed_estimation.SpeedConfidence for the exact source
+ * enums these labels transcribe. */
+const LANE_STATUS_LABEL = {
+  assigned: "Assigned", ambiguous: "Ambiguous", unknown_no_geometry: "No geometry configured",
+  unknown_outside_regions: "Outside configured lanes", invalid_geometry: "Invalid geometry", not_computed: "Not computed",
+};
+const SPEED_CONFIDENCE_LABEL = {
+  validated: "Metric speed — validated", approximate: "Approx. speed (calibration-derived, not metric-validated)",
+  outlier: "UNRELIABLE — OUTLIER (exceeds the physical plausibility ceiling; rejected, not shown as a number)",
+  unavailable: "UNAVAILABLE",
+};
+/* anvesh.hypotheses.candidate_vehicle.CandidateVehicleStatus -- never
+ * relabel "resolved" as culprit/responsible/confirmed-cause; the badge
+ * color for a resolved candidate is the SAME red already used everywhere
+ * else in this dashboard for a flagged/error state (COLOR_HEX.bad). */
+const CANDIDATE_STATUS_LABEL = {
+  resolved: "Evidence-backed candidate", ambiguous: "Ambiguous — multiple equally-supported vehicles",
+  no_vehicle_for_hypothesis: "Top hypothesis names no vehicle", not_ranked: "Ranking abstained",
+};
+const CANDIDATE_STATUS_COLOR = { resolved: "bad", ambiguous: "warn", no_vehicle_for_hypothesis: "neutral", not_ranked: "neutral" };
+
+/* Lazily fetched via ensureShowcaseData() (anvesh-app-2) -- null until
+ * loaded, so every showcase reader must go through showcaseWindows()/
+ * showcaseFrames() below rather than touching showcaseData directly. */
+let showcaseData = null;
+let showcaseLaneGeometry = null;
+let showcaseLoadState = "idle"; // "idle" | "loading" | "loaded" | "error"
+let showcaseLoadError = null;
+
+const MODULE_ROUTES = [
+  { id: "video-replay", label: "Video Replay", icon: "videocam" },
+  { id: "pipeline-diagnostics", label: "Pipeline Diagnostics", icon: "insights" },
+  { id: "evidence-matrix", label: "Evidence Matrix", icon: "grid_view" },
+  { id: "cause-ranking", label: "Cause Ranking", icon: "account_tree" },
+  { id: "safety-events", label: "Safety Events", icon: "warning" },
+];
+const SCENARIO_ROUTES = [
+  { path: "cross-camera-agreement", scenarioId: "cross_camera_agreement", icon: "sync_alt" },
+  { path: "camera-disagreement", scenarioId: "camera_disagreement", icon: "difference" },
+  { path: "reliability-degradation", scenarioId: "reliability_degradation", icon: "broken_image" },
+];
+
+let state = { mode: "real", scenarioIndex: 0, windowIndex: 0, route: "video-replay", selectedHypothesis: null, selectedTrack: null };
+
+/* =========================================================================
+ * Helpers
+ * ========================================================================= */
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c])); }
+function fmt(x, d) { return Number(x).toFixed(d === undefined ? 2 : d); }
+// M-A.1: a speed with no real measurement is exported as null and shown as "speed unavailable" --
+// never as 0 (a 0.0 placeholder would read as "stopped traffic").
+function speedOrDash(m, avail, d) { return (avail === false || m == null) ? null : fmt(m.value, d); }
+function pct(x) { return (x * 100).toFixed(1) + "%"; }
+function tail(trackId) { return String(trackId).split(":").pop(); }
+function mmss(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds - m * 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+function badgeHTML(color, label, extra) {
+  return `<span class="inline-flex items-center gap-xs px-xs py-2xs border font-mono text-label-caps uppercase rounded-sm ${badgeClasses(color)} ${extra || ""}"><span class="w-1 h-1 rounded-full bg-current"></span>${esc(label)}</span>`;
+}
+function badgeClasses(color) {
+  const map = {
+    good: "border-secondary/40 text-secondary bg-secondary/10",
+    warn: "border-tertiary/40 text-tertiary bg-tertiary/10",
+    bad: "border-error/40 text-error bg-error/10",
+    info: "border-primary/40 text-primary bg-primary/10",
+    neutral: "border-outline-variant text-outline bg-surface-container-lowest",
+  };
+  return map[color] || map.neutral;
+}
+function panelHTML(inner, extraClass) {
+  return `<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-lg ${extraClass || ""}">${inner}</div>`;
+}
+function sectionHead(title, right) {
+  return `<div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20">
+    <span class="font-mono text-label-caps uppercase text-outline tracking-wider">${esc(title)}</span>
+    <div class="flex items-center gap-sm">${right || ""}</div>
+  </div>`;
+}
+function downloadJSON(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+function sparklineSVG(values, opts) {
+  opts = opts || {};
+  const w = opts.width || 600, h = opts.height || 90, pad = 4;
+  const max = Math.max(1, ...values);
+  const n = values.length;
+  const stepX = n > 1 ? (w - pad * 2) / (n - 1) : 0;
+  const pts = values.map((v, i) => {
+    const x = pad + i * stepX;
+    const y = h - pad - (v / max) * (h - pad * 2);
+    return [x, y];
+  });
+  const line = pts.map(p => p.join(",")).join(" ");
+  const area = `${pad},${h - pad} ${line} ${w - pad},${h - pad}`;
+  const peakIdx = values.indexOf(max);
+  const peak = pts[peakIdx] || [pad, h - pad];
+  return `<svg viewBox="0 0 ${w} ${h}" class="w-full h-full" preserveAspectRatio="none">
+    <polygon points="${area}" fill="${COLOR_HEX.bad}" opacity="0.12"></polygon>
+    <polyline points="${line}" fill="none" stroke="${COLOR_HEX.bad}" stroke-width="2" vector-effect="non-scaling-stroke"></polyline>
+    ${max > 0 ? `<circle cx="${peak[0]}" cy="${peak[1]}" r="3.5" fill="${COLOR_HEX.bad}"></circle>` : ""}
+  </svg>`;
+}
+
+/* =========================================================================
+ * Data access
+ * ========================================================================= */
+
+function synthScenarios() { return ANVESH_DATA.synthetic.scenarios; }
+function currentScenario() { return synthScenarios()[state.scenarioIndex]; }
+/* V1 Dataset Showcase (c006) accessors -- ALWAYS go through these, never
+ * read showcaseData directly, so a not-yet-loaded/unavailable showcase
+ * never throws: they return an empty result instead, and the render()
+ * dispatcher (anvesh-app-6) never calls a route renderer for mode
+ * "showcase" until showcaseLoadState === "loaded" anyway. */
+function showcaseWindows() { return (showcaseData && showcaseData.real_video && showcaseData.real_video.windows) || []; }
+function showcaseFrames() { return (showcaseData && showcaseData.real_video && showcaseData.real_video.frames) || []; }
+function currentWindows() {
+  if (state.mode === "showcase") return showcaseWindows();
+  return state.mode === "real" ? ANVESH_DATA.real_video.windows : currentScenario().windows;
+}
+function clampWindowIndex() {
+  const n = currentWindows().length;
+  state.windowIndex = Math.max(0, Math.min(n - 1, state.windowIndex));
+  return state.windowIndex;
+}
+function currentWindow() { return currentWindows()[clampWindowIndex()]; }
+function defaultWindowIndexFor(mode, scenarioIndex) {
+  const windows = mode === "showcase" ? showcaseWindows() : mode === "real" ? ANVESH_DATA.real_video.windows : synthScenarios()[scenarioIndex].windows;
+  if (!windows.length) return 0;
+  const idx = windows.findIndex(w => w.safety_events && w.safety_events.length);
+  return idx >= 0 ? idx : 0;
+}
+function uniqueIncidents(windows) {
+  const map = new Map();
+  windows.forEach((w, wi) => {
+    w.safety_events.forEach(e => {
+      if (!map.has(e.event_id)) map.set(e.event_id, Object.assign({}, e, { windows: [] }));
+      map.get(e.event_id).windows.push(wi);
+    });
+  });
+  return Array.from(map.values());
+}
+function findTrack(windows, trackId) {
+  for (let wi = 0; wi < windows.length; wi++) {
+    const w = windows[wi];
+    for (const cid of Object.keys(w.tracks_by_camera)) {
+      const t = w.tracks_by_camera[cid].find(t => t.track_id === trackId);
+      if (t) return { track: t, cameraId: cid, windowIndex: wi, window: w };
+    }
+  }
+  return null;
+}
+function centroidSpeedTrace(trackTailId, tMin, tMax, frames) {
+  frames = frames || ANVESH_DATA.real_video.frames;
+  const pts = [];
+  for (const f of frames) {
+    if (f.timestamp < tMin || f.timestamp > tMax) continue;
+    const b = f.boxes.find(b => b.track_id === trackTailId);
+    if (b) pts.push({ t: f.timestamp, cx: (b.bbox_xyxy[0] + b.bbox_xyxy[2]) / 2, cy: (b.bbox_xyxy[1] + b.bbox_xyxy[3]) / 2 });
+  }
+  const speeds = [];
+  for (let i = 1; i < pts.length; i++) {
+    const dt = pts[i].t - pts[i - 1].t;
+    if (dt <= 0) continue;
+    const dx = pts[i].cx - pts[i - 1].cx, dy = pts[i].cy - pts[i - 1].cy;
+    speeds.push({ t: pts[i].t, v: Math.sqrt(dx * dx + dy * dy) / dt });
+  }
+  return speeds;
+}
+function topTiedEntries(win) {
+  const list = win.candidate_ranking.ranked_list.filter(e => e.belief > 0);
+  if (!list.length) return [];
+  const maxBelief = Math.max(...list.map(e => e.belief));
+  return list.filter(e => Math.abs(e.belief - maxBelief) < 1e-9);
+}
+function topTiedSummary(win) {
+  const top = topTiedEntries(win);
+  if (!top.length) return "No hypothesis distinguishes itself";
+  return top.map(e => `${e.hypothesis_id} ${HYPOTHESES[e.hypothesis_id]}`).join(" &amp; ") + (top.length > 1 ? ` (tied, ${pct(top[0].belief)})` : ` (${pct(top[0].belief)})`);
+}
+</script>
+<script id="anvesh-app-2">
+"use strict";
+
+/* =========================================================================
+ * Router + shell chrome
+ * ========================================================================= */
+
+function parseHash() {
+  const h = location.hash.replace(/^#\/?/, "");
+  if (!h) return { kind: "module", id: "video-replay" };
+  if (h.startsWith("synthetic")) return { kind: "synthetic", path: h.split("/")[1] || SCENARIO_ROUTES[0].path };
+  return { kind: "module", id: h };
+}
+
+function onRouteChange() {
+  const r = parseHash();
+  if (r.kind === "synthetic") {
+    const routeDef = SCENARIO_ROUTES.find(s => s.path === r.path) || SCENARIO_ROUTES[0];
+    state.mode = "synthetic";
+    state.scenarioIndex = Math.max(0, synthScenarios().findIndex(s => s.scenario_id === routeDef.scenarioId));
+    state.windowIndex = 0;
+    state.route = "synthetic";
+  } else {
+    if (state.route === "synthetic") state.windowIndex = defaultWindowIndexFor(state.mode, state.scenarioIndex);
+    state.route = r.id;
+  }
+  state.selectedHypothesis = null; state.selectedTrack = null;
+  render();
+}
+
+function navLinkHTML(path, icon, label, active) {
+  const cls = active
+    ? "bg-surface-container-high text-primary border-l-2 border-primary font-semibold"
+    : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface border-l-2 border-transparent";
+  return `<a href="#" data-path="${esc(path)}" class="flex items-center gap-sm px-md py-sm transition-colors font-body-md text-body-md ${cls}"><span class="material-symbols-outlined text-[18px]">${icon}</span>${esc(label)}</a>`;
+}
+
+function renderSidebar() {
+  const modules = document.getElementById("nav-modules");
+  modules.innerHTML = MODULE_ROUTES.map(r => navLinkHTML(r.id, r.icon, r.label, state.route === r.id)).join("");
+  const scenarios = document.getElementById("nav-scenarios");
+  scenarios.innerHTML = SCENARIO_ROUTES.map(r => {
+    const sc = synthScenarios().find(s => s.scenario_id === r.scenarioId);
+    const active = state.route === "synthetic" && currentScenario().scenario_id === r.scenarioId;
+    return navLinkHTML("synthetic/" + r.path, r.icon, sc.title, active);
+  }).join("");
+  [modules, scenarios].forEach(nav => nav.querySelectorAll("a").forEach(a => a.addEventListener("click", e => {
+    e.preventDefault(); location.hash = "#" + a.dataset.path;
+  })));
+}
+
+function renderTopbar() {
+  document.querySelectorAll("#mode-seg button").forEach(b => {
+    const active = b.dataset.mode === state.mode;
+    b.className = "flex items-center gap-xs px-sm py-2xs rounded font-mono text-label-sm transition-colors " + (active ? "bg-surface-container-high text-primary" : "text-on-surface-variant hover:text-on-surface");
+    b.querySelector("span").className = "w-1.5 h-1.5 rounded-full " + (active ? "bg-primary" : "border border-outline-variant");
+  });
+  const statusEl = document.getElementById("topbar-status");
+  if (state.mode === "real") {
+    const rv = ANVESH_DATA.real_video;
+    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-secondary"></span><span>${esc(rv.camera_id)}</span><span class="text-outline">&middot;</span><span class="text-on-surface-variant">Precomputed replay</span><span class="text-outline">&middot;</span><span class="text-primary">${WINDOW_SECONDS | 0}s windows</span>`;
+  } else if (state.mode === "showcase") {
+    if (showcaseLoadState === "loaded") {
+      const rv = showcaseData.real_video;
+      statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-primary"></span><span>${esc(rv.camera_id)}</span><span class="text-outline">&middot;</span><span class="text-on-surface-variant">AICity/CityFlow S02 &middot; precomputed replay</span><span class="text-outline">&middot;</span><span class="text-primary">${WINDOW_SECONDS | 0}s windows</span>`;
+    } else if (showcaseLoadState === "error") {
+      statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-error"></span><span class="text-error">Showcase data unavailable</span>`;
+    } else {
+      statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-outline animate-pulse"></span><span class="text-on-surface-variant">Loading c006 sample&hellip;</span>`;
+    }
+  } else {
+    const sc = currentScenario();
+    statusEl.innerHTML = `<span class="w-2 h-2 rounded-full bg-tertiary"></span><span>${esc(sc.title)}</span><span class="text-outline">&middot;</span><span class="text-on-surface-variant">Synthetic, hand-authored</span><span class="text-outline">&middot;</span><span class="text-tertiary">${WINDOW_SECONDS | 0}s windows</span>`;
+  }
+  document.getElementById("sidebar-source-note").textContent = state.mode === "real"
+    ? ANVESH_DATA.real_video.video_name
+    : state.mode === "showcase"
+      ? (showcaseLoadState === "loaded" ? showcaseData.real_video.video_name + " (S02/c006)" : "S02/c006 sample")
+      : "Hand-authored fixtures";
+}
+
+/* Lazily fetches the V1 Dataset Showcase's own JSON artifacts (never
+ * ANVESH_DATA, never demo.mp4) the FIRST time showcase mode is entered.
+ * Idempotent -- safe to call on every setMode("showcase"). Absent
+ * window.ANVESH_LIVE_CONFIG.showcaseDataUrl (e.g. the fully-embedded,
+ * protected ui/anvesh_dashboard.html build, which has no external-fetch
+ * path) resolves to an explicit, honest "unavailable" state rather than
+ * throwing or silently showing nothing. */
+function ensureShowcaseData() {
+  if (showcaseLoadState !== "idle") return;
+  const cfg = (typeof window !== "undefined" && window.ANVESH_LIVE_CONFIG) || {};
+  if (!cfg.showcaseDataUrl) {
+    showcaseLoadState = "error";
+    showcaseLoadError = "No V1 Showcase data source is configured for this build.";
+    return;
+  }
+  showcaseLoadState = "loading";
+  Promise.all([
+    fetch(cfg.showcaseDataUrl).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status} fetching ${cfg.showcaseDataUrl}`); return r.json(); }),
+    cfg.showcaseLaneUrl
+      ? fetch(cfg.showcaseLaneUrl).then(r => (r.ok ? r.json() : null)).catch(() => null)
+      : Promise.resolve(null),
+  ]).then(([data, laneGeometry]) => {
+    showcaseData = data;
+    showcaseLaneGeometry = laneGeometry;
+    showcaseLoadState = "loaded";
+    if (state.mode === "showcase") {
+      state.windowIndex = defaultWindowIndexFor("showcase", state.scenarioIndex);
+      render();
+    }
+  }).catch(err => {
+    showcaseLoadState = "error";
+    showcaseLoadError = String(err && err.message || err);
+    if (state.mode === "showcase") render();
+  });
+}
+
+function setMode(mode) {
+  if (state.mode === mode && state.route !== "synthetic") return;
+  const wasSynthetic = state.route === "synthetic";
+  state.mode = mode;
+  if (mode === "showcase") ensureShowcaseData();
+  state.windowIndex = defaultWindowIndexFor(mode, state.scenarioIndex);
+  state.selectedHypothesis = null; state.selectedTrack = null;
+  if (mode !== "synthetic" && wasSynthetic) { location.hash = "#video-replay"; return; }
+  if (mode === "synthetic" && !wasSynthetic) { location.hash = "#synthetic/" + SCENARIO_ROUTES[0].path; return; }
+  render();
+}
+
+document.querySelectorAll("#mode-seg button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+window.addEventListener("hashchange", onRouteChange);
+
+/* =========================================================================
+ * Shared widgets
+ * ========================================================================= */
+
+function windowStepperHTML(idPrefix) {
+  const windows = currentWindows();
+  const idx = clampWindowIndex();
+  const w = windows[idx];
+  if (windows.length <= 1) {
+    return `<span class="px-sm py-2xs bg-surface-container-high rounded border border-outline-variant/30 font-mono text-label-sm">Window 1/1 &middot; ${mmss(w.window[0])}&ndash;${mmss(w.window[1])}</span>`;
+  }
+  const disPrev = idx === 0, disNext = idx === windows.length - 1;
+  return `<div class="flex items-center gap-xs font-mono text-label-sm" id="${idPrefix}-stepper">
+    <button class="w-6 h-6 flex items-center justify-center border border-outline-variant/40 rounded ${disPrev ? "opacity-30" : "hover:border-primary hover:text-primary"}" data-step="-1" ${disPrev ? "disabled" : ""} type="button">&#8249;</button>
+    <span class="px-sm py-2xs bg-surface-container-high rounded border border-outline-variant/30">Window ${idx + 1}/${windows.length} &middot; ${mmss(w.window[0])}&ndash;${mmss(w.window[1])}</span>
+    <button class="w-6 h-6 flex items-center justify-center border border-outline-variant/40 rounded ${disNext ? "opacity-30" : "hover:border-primary hover:text-primary"}" data-step="1" ${disNext ? "disabled" : ""} type="button">&#8250;</button>
+  </div>`;
+}
+function wireWindowStepper(container, idPrefix, onChange) {
+  const el = container.querySelector("#" + idPrefix + "-stepper");
+  if (!el) return;
+  el.querySelectorAll("button[data-step]").forEach(b => b.addEventListener("click", () => {
+    state.windowIndex = clampWindowIndex() + Number(b.dataset.step);
+    clampWindowIndex();
+    onChange();
+  }));
+}
+
+function trackInspectorHTML(track, win, opts) {
+  opts = opts || {};
+  const windowInferenceCard = `
+    <div class="bg-surface-container-low p-sm rounded border border-outline-variant/20 flex flex-col gap-xs">
+      <div class="flex items-center justify-between"><span class="font-mono text-label-caps text-outline">Window ${state.windowIndex + 1} inference</span>${win.corridor_state ? badgeHTML(CONGESTION_BADGE[win.corridor_state.fused_congestion_level], CONGESTION_LABEL[win.corridor_state.fused_congestion_level]) : ""}</div>
+      <div class="font-mono text-primary text-[11px] bg-surface-container px-2 py-1 rounded">${topTiedSummary(win)}</div>
+    </div>`;
+  const linkFooter = opts.hideLink ? "" : `<a class="w-full py-sm bg-surface-container-high hover:bg-surface-bright text-primary border border-outline-variant/40 rounded font-mono text-label-sm flex items-center justify-center gap-xs transition-colors group" href="#evidence-matrix"><span>Inspect deeper evidence</span><span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span></a>`;
+  const header = `<div class="flex items-center justify-between pb-xs border-b border-outline-variant/20">
+      <div class="flex items-center gap-xs"><span class="material-symbols-outlined text-primary text-[18px]">biotech</span><h2 class="font-mono text-headline-sm text-on-surface uppercase tracking-wider">Target Inspector</h2></div>
+      ${track ? `<span class="px-xs py-2xs bg-primary/10 text-primary border border-primary/30 rounded font-mono text-label-caps">TRACK ${esc(tail(track.track_id))}</span>` : ""}
+    </div>`;
+
+  if (!track) {
+    return `<div class="flex flex-col gap-sm">${header}<div class="text-body-sm text-on-surface-variant py-sm text-center">Select a track below to inspect it.</div>${windowInferenceCard}${linkFooter}</div>`;
+  }
+  const speedUnit = track.motion_space === "world" ? "m/s" : "px/s";
+  const speedLabel = track.motion_space === "world" ? "Speed" : "Speed (image-space)";
+  const flagged = win.safety_events.some(e => e.track_id === track.track_id);
+  return `
+  <div class="flex flex-col gap-sm">
+    ${header}
+    <div class="flex flex-col gap-xs bg-surface-container-low p-sm rounded border border-outline-variant/20">
+      <div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Vehicle class</span><span class="font-mono text-data-sm text-on-surface">${esc(track.vehicle_class)}</span></div>
+      <div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">${speedLabel}</span><span class="font-mono text-data-sm text-primary font-bold">${track.speed_available === false || !track.speed_estimate ? "speed unavailable" : fmt(track.speed_estimate.value, 1) + " &plusmn; " + fmt(track.speed_estimate.error, 1) + " " + speedUnit}</span></div>
+      <div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Occlusion state</span><span class="font-mono text-data-sm text-on-surface">${esc(track.occlusion_state)}</span></div>
+      <div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Track span</span><span class="font-mono text-data-sm text-on-surface">${fmt(track.first_seen, 1)}s &ndash; ${fmt(track.last_seen, 1)}s</span></div>
+      <div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Observations</span><span class="font-mono text-data-sm text-on-surface">${track.observation_count}</span></div>
+    </div>
+    ${flagged ? `<div class="bg-error/10 border border-error/30 rounded p-sm flex flex-col gap-xs">
+      <div class="flex items-center justify-between"><div class="flex items-center gap-xs text-error"><span class="material-symbols-outlined text-[16px]">warning</span><span class="font-mono text-headline-sm font-bold">Stopped vehicle</span></div>${badgeHTML("bad", "safety event")}</div>
+      <span class="font-mono text-label-caps text-outline">Informational only &mdash; not dispatch or enforcement automation.</span>
+    </div>` : ""}
+    ${windowInferenceCard}
+    ${linkFooter}
+  </div>`;
+}
+</script>
+<script id="anvesh-app-3">
+"use strict";
+
+/* =========================================================================
+ * View 1 -- Video Replay
+ * ========================================================================= */
+
+let videoSyncActive = false;
+let videoElSingleton = null;
+function getOrCreateVideoEl() {
+  if (!videoElSingleton) {
+    videoElSingleton = document.createElement("video");
+    videoElSingleton.id = "real-video";
+    videoElSingleton.className = "block w-full h-auto";
+    videoElSingleton.muted = true;
+    videoElSingleton.playsInline = true;
+    videoElSingleton.preload = "auto";
+    videoElSingleton.src = VIDEO_SRC;
+  }
+  return videoElSingleton;
+}
+
+function findFrameForTime(t) {
+  const frames = ANVESH_DATA.real_video.frames;
+  let best = frames[0];
+  for (let i = 0; i < frames.length; i++) { if (frames[i].timestamp <= t) best = frames[i]; else break; }
+  return best;
+}
+function drawOverlayForFrame(canvas, frame) {
+  const rv = ANVESH_DATA.real_video;
+  if (canvas.width !== rv.video_width) canvas.width = rv.video_width;
+  if (canvas.height !== rv.video_height) canvas.height = rv.video_height;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!frame) return;
+  ctx.lineWidth = 2.5;
+  ctx.font = "600 15px 'JetBrains Mono', monospace";
+  ctx.textBaseline = "bottom";
+  frame.boxes.forEach(b => {
+    const [x1, y1, x2, y2] = b.bbox_xyxy;
+    const flagged = state.selectedTrack === ANVESH_DATA.real_video.camera_id + ":" + b.track_id;
+    ctx.strokeStyle = flagged ? "#ef4444" : "#38bdf8";
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    const label = `#${b.track_id} ${b.vehicle_class}`;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = flagged ? "#ef4444" : "#38bdf8";
+    ctx.fillRect(x1, Math.max(0, y1 - 19), tw + 10, 19);
+    ctx.fillStyle = "#070d14";
+    ctx.fillText(label, x1 + 5, Math.max(19, y1));
+  });
+}
+function activeWindowIndexForTime(t, windows) {
+  return Math.max(0, Math.min(windows.length - 1, Math.floor(t / WINDOW_SECONDS)));
+}
+function videoSyncTick() {
+  if (state.route !== "video-replay" || state.mode !== "real") { videoSyncActive = false; return; }
+  const videoEl = document.getElementById("real-video");
+  const overlayEl = document.getElementById("overlay-canvas");
+  if (!videoEl || !overlayEl) { videoSyncActive = false; return; }
+  const rv = ANVESH_DATA.real_video;
+  const t = videoEl.currentTime;
+  const outOfRangeEl = document.getElementById("video-out-of-range");
+  const timeEl = document.getElementById("vid-time");
+  if (t >= rv.sampled_duration_s) {
+    outOfRangeEl.hidden = false;
+    timeEl.textContent = `${fmt(t, 1)}s / ${fmt(videoEl.duration || 0, 1)}s`;
+    document.getElementById("status-frame").textContent = "outside precomputed range";
+    document.getElementById("status-detections").textContent = "—";
+    requestAnimationFrame(videoSyncTick);
+    return;
+  }
+  outOfRangeEl.hidden = true;
+  const frame = findFrameForTime(t);
+  drawOverlayForFrame(overlayEl, frame);
+  timeEl.textContent = `${fmt(t, 1)}s / ${fmt(videoEl.duration || 0, 1)}s`;
+  document.getElementById("status-frame").textContent = `${frame.frame_index} / ${rv.frame_count}`;
+  document.getElementById("status-detections").textContent = String(frame.boxes.length);
+
+  const newIndex = activeWindowIndexForTime(t, rv.windows);
+  if (newIndex !== state.windowIndex) {
+    state.windowIndex = newIndex;
+    const win = rv.windows[newIndex];
+    document.getElementById("status-active-tracks").textContent = String(Object.values(win.tracks_by_camera)[0].length);
+    renderVideoTrackChips(win);
+  }
+  requestAnimationFrame(videoSyncTick);
+}
+function startVideoSync() { if (!videoSyncActive) { videoSyncActive = true; requestAnimationFrame(videoSyncTick); } }
+
+function renderVideoTrackChips(win) {
+  const container = document.getElementById("video-track-chips");
+  if (!container) return;
+  const tracks = Object.values(win.tracks_by_camera)[0] || [];
+  const flagged = new Set(win.safety_events.map(e => e.track_id));
+  container.innerHTML = tracks.map(t => `<span class="track-chip cursor-pointer font-mono text-data-sm px-xs py-2xs rounded border ${flagged.has(t.track_id) ? "border-error/50 text-error bg-error/10" : "border-outline-variant/40 text-on-surface-variant"} ${state.selectedTrack === t.track_id ? "!border-primary !text-primary bg-primary/10" : ""}" data-track="${esc(t.track_id)}">${esc(tail(t.track_id))}</span>`).join("")
+    || `<span class="text-body-sm text-on-surface-variant">No tracks in this window.</span>`;
+  container.querySelectorAll("[data-track]").forEach(el => el.addEventListener("click", () => {
+    const id = el.dataset.track;
+    state.selectedTrack = state.selectedTrack === id ? null : id;
+    document.getElementById("track-inspector-slot").innerHTML = trackInspectorHTML(tracks.find(t => t.track_id === state.selectedTrack), win);
+    renderVideoTrackChips(win);
+  }));
+}
+
+function renderVideoReplay(root) {
+  if (state.mode === "synthetic") { renderVideoReplaySynthetic(root); return; }
+  if (state.mode === "showcase") { renderShowcaseReplay(root); return; }
+  const rv = ANVESH_DATA.real_video;
+  const win = currentWindow();
+  root.innerHTML = `
+  <div class="p-lg flex flex-col gap-md">
+    <div class="flex items-center justify-between pb-sm border-b border-outline-variant/20 flex-wrap gap-sm">
+      <div class="flex items-center gap-md flex-wrap">
+        <div class="flex items-center gap-xs"><span class="w-2 h-2 rounded-full bg-secondary"></span><span class="font-mono text-data-md text-primary tracking-wide">${esc(rv.camera_id.toUpperCase())}</span></div>
+        <span class="text-outline">|</span>
+        <span class="text-on-surface-variant font-mono text-label-sm">${esc(rv.video_name)} &middot; ${rv.video_width}&times;${rv.video_height} &middot; single uncalibrated camera</span>
+      </div>
+      <div class="flex items-center gap-xs font-mono text-label-caps text-on-surface-variant/80">
+        <span>FPS: <strong class="text-primary font-mono font-normal">${fmt(rv.video_fps, 2)}</strong></span><span class="text-outline">&middot;</span>
+        <span>MODE: <strong class="text-on-surface font-mono font-normal">${esc(rv.perception_mode)}</strong></span>
+      </div>
+    </div>
+    <div class="grid grid-cols-12 gap-md items-start">
+      <div class="col-span-12 xl:col-span-9 flex flex-col gap-md">
+        <div class="relative w-full bg-black rounded-lg border border-outline-variant/30 overflow-hidden">
+          <div id="video-slot"></div>
+          <canvas id="overlay-canvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+          <div class="absolute top-sm left-sm px-sm py-2xs bg-surface-container-lowest/90 backdrop-blur border border-outline-variant/40 rounded flex items-center gap-xs font-mono text-label-caps text-on-surface tracking-widest"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>PRECOMPUTED REPLAY</div>
+          <div id="video-out-of-range" hidden class="absolute inset-0 flex items-center justify-center text-center bg-surface/90 text-on-surface text-body-md px-xl pointer-events-none">No precomputed perception data beyond this point in the demo build.</div>
+        </div>
+        ${panelHTML(`<div class="p-md flex flex-col gap-sm">
+          <div class="flex items-center justify-between flex-wrap gap-sm">
+            <span class="font-mono text-data-md text-primary" id="vid-time">0.0s / 0.0s</span>
+            <span class="font-mono text-label-caps px-xs py-2xs bg-surface-container-high rounded border border-outline-variant/30 text-on-surface" id="sample-range-badge"></span>
+          </div>
+          <div class="flex items-center justify-between flex-wrap gap-sm pt-xs border-t border-outline-variant/20">
+            <div class="flex items-center gap-xs">
+              <button class="px-sm py-xs bg-surface-container hover:bg-surface-container-high rounded font-mono text-label-sm border border-outline-variant/30 flex items-center gap-xs" id="vid-back" type="button"><span class="material-symbols-outlined text-[15px]">replay_10</span>-10s</button>
+              <button class="px-md py-xs bg-primary text-on-primary hover:bg-primary-container rounded font-mono text-label-sm font-semibold flex items-center gap-xs" id="vid-playpause" type="button"><span class="material-symbols-outlined text-[16px]">play_arrow</span><span>Play</span></button>
+              <button class="px-sm py-xs bg-surface-container hover:bg-surface-container-high rounded font-mono text-label-sm border border-outline-variant/30 flex items-center gap-xs" id="vid-fwd" type="button"><span class="material-symbols-outlined text-[15px]">forward_10</span>+10s</button>
+              <button class="ml-xs px-sm py-xs bg-surface-container hover:bg-surface-container-high rounded font-mono text-label-sm border border-outline-variant/30 flex items-center gap-xs" id="vid-replay" type="button"><span class="material-symbols-outlined text-[14px]">replay</span>Replay</button>
+            </div>
+            <div class="flex items-center gap-sm">
+              <span class="font-mono text-label-caps text-outline">SPEED</span>
+              <div class="flex items-center bg-surface-container rounded border border-outline-variant/30 p-0.5" id="speed-group">
+                <button class="px-xs py-2xs font-mono text-label-caps rounded" data-speed="0.5" type="button">0.5x</button>
+                <button class="px-xs py-2xs font-mono text-label-caps rounded" data-speed="1" type="button">1.0x</button>
+                <button class="px-xs py-2xs font-mono text-label-caps rounded" data-speed="2" type="button">2.0x</button>
+              </div>
+            </div>
+          </div>
+        </div>`)}
+        ${panelHTML(`<div class="p-md grid grid-cols-2 sm:grid-cols-4 gap-sm">
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">GPU</span><span class="font-mono text-data-sm" id="status-gpu"></span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Perception</span><span class="font-mono text-data-sm">${esc(rv.perception_method)}</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Frame</span><span class="font-mono text-data-sm" id="status-frame">&mdash;</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Detections (frame)</span><span class="font-mono text-data-sm" id="status-detections">&mdash;</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Active tracks (window)</span><span class="font-mono text-data-sm" id="status-active-tracks">${Object.values(win.tracks_by_camera)[0].length}</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Total tracks (sample)</span><span class="font-mono text-data-sm">${rv.total_tracks}</span></div>
+          <div class="flex flex-col gap-2xs col-span-2"><span class="font-mono text-label-caps text-outline">Sample coverage</span><span class="font-mono text-data-sm">${mmss(rv.sampled_duration_s)} of ${mmss(rv.full_video_duration_s)} total (${rv.full_video_frame_count} frames)</span></div>
+        </div>`)}
+        <div class="flex flex-wrap gap-xs" id="video-track-chips"></div>
+      </div>
+      <div class="col-span-12 xl:col-span-3" id="track-inspector-slot">${trackInspectorHTML(null, win)}</div>
+    </div>
+  </div>`;
+
+  document.getElementById("status-gpu").textContent = rv.gpu.cuda_available ? rv.gpu.device_name : "CPU (CUDA unavailable)";
+  document.getElementById("sample-range-badge").textContent = rv.full_video_duration_s > rv.sampled_duration_s + 1
+    ? `Precomputed: 00:00–${mmss(rv.sampled_duration_s)} of ${mmss(rv.full_video_duration_s)}` : `Precomputed: full ${mmss(rv.sampled_duration_s)}`;
+  renderVideoTrackChips(win);
+
+  // The <video> element wraps an 80MB+ embedded data: URI -- re-creating it
+  // on every route visit would force the browser to re-parse that whole
+  // blob each time. It is created once and moved (not cloned) into
+  // whichever view-root currently needs it, preserving its decode buffer
+  // and playback position across navigation, matching how a native app's
+  // player would behave.
+  const isNewVideoEl = !videoElSingleton;
+  const videoEl = getOrCreateVideoEl();
+  document.getElementById("video-slot").appendChild(videoEl);
+  if (isNewVideoEl) {
+    const seekToWindowStart = () => { videoEl.currentTime = win.window[0]; };
+    if (videoEl.readyState >= 1) seekToWindowStart();
+    else videoEl.addEventListener("loadedmetadata", seekToWindowStart, { once: true });
+    // Attached once on the persistent element; looks up whichever play
+    // button currently exists in the DOM rather than closing over one that
+    // gets discarded on the next navigation.
+    const setPlayBtnState = (playing) => {
+      const b = document.getElementById("vid-playpause");
+      if (b) b.innerHTML = playing
+        ? `<span class="material-symbols-outlined text-[16px]">pause</span><span>Pause</span>`
+        : `<span class="material-symbols-outlined text-[16px]">play_arrow</span><span>Play</span>`;
+    };
+    videoEl.addEventListener("play", () => setPlayBtnState(true));
+    videoEl.addEventListener("pause", () => setPlayBtnState(false));
+  }
+  const playBtn = document.getElementById("vid-playpause");
+  playBtn.innerHTML = videoEl.paused
+    ? `<span class="material-symbols-outlined text-[16px]">play_arrow</span><span>Play</span>`
+    : `<span class="material-symbols-outlined text-[16px]">pause</span><span>Pause</span>`;
+  playBtn.addEventListener("click", () => { if (videoEl.paused) videoEl.play(); else videoEl.pause(); });
+  document.getElementById("vid-back").addEventListener("click", () => { videoEl.currentTime = Math.max(0, videoEl.currentTime - 10); });
+  document.getElementById("vid-fwd").addEventListener("click", () => { videoEl.currentTime = Math.min(videoEl.duration || 1e9, videoEl.currentTime + 10); });
+  document.getElementById("vid-replay").addEventListener("click", () => { videoEl.currentTime = 0; videoEl.play(); });
+  const speedBtns = document.querySelectorAll("#speed-group button");
+  function paintSpeedBtns() { speedBtns.forEach(b => b.className = "px-xs py-2xs font-mono text-label-caps rounded " + (Number(b.dataset.speed) === videoEl.playbackRate ? "bg-primary/20 text-primary font-bold" : "text-on-surface-variant hover:text-on-surface")); }
+  speedBtns.forEach(b => b.addEventListener("click", () => { videoEl.playbackRate = Number(b.dataset.speed); paintSpeedBtns(); }));
+  paintSpeedBtns();
+  startVideoSync();
+}
+
+function renderVideoReplaySynthetic(root) {
+  const sc = currentScenario();
+  const win = currentWindow();
+  const cams = win.camera_ids;
+  root.innerHTML = `
+  <div class="p-lg flex flex-col gap-md">
+    <div class="flex items-center justify-between pb-sm border-b border-outline-variant/20 flex-wrap gap-sm">
+      <div class="flex items-center gap-md"><span class="font-mono text-data-md text-tertiary tracking-wide">${esc(sc.title.toUpperCase())}</span><span class="text-outline">|</span><span class="text-on-surface-variant font-mono text-label-sm">Hand-authored WORLD-space fixture, no camera footage exists</span></div>
+      <div id="stepper-slot"></div>
+    </div>
+    ${panelHTML(`<div class="p-lg flex flex-col items-center text-center gap-sm text-on-surface-variant">
+      <span class="material-symbols-outlined text-[32px] text-outline">videocam_off</span>
+      <p class="text-body-md max-w-[560px]">No video capture exists for this scenario. Synthetic scenarios are explicit, hand-authored WORLD-space vehicle trajectories fed directly into the real ANVESH engine (<code class="font-mono text-primary">anvesh.pipeline.run_corridor_window</code>) to exercise fusion, propagation, and feedback &mdash; there is no camera frame to replay.</p>
+      <div class="flex gap-sm mt-xs"><a href="#evidence-matrix" class="px-md py-xs bg-surface-container-high hover:bg-surface-bright text-primary border border-outline-variant/40 rounded font-mono text-label-sm">View Evidence Matrix</a><a href="#cause-ranking" class="px-md py-xs bg-surface-container-high hover:bg-surface-bright text-primary border border-outline-variant/40 rounded font-mono text-label-sm">View Cause Ranking</a></div>
+    </div>`)}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-md" id="synth-cams"></div>
+  </div>`;
+  document.getElementById("stepper-slot").innerHTML = windowStepperHTML("vr-synth");
+  wireWindowStepper(root, "vr-synth", () => renderVideoReplaySynthetic(root));
+
+  const camsEl = document.getElementById("synth-cams");
+  camsEl.innerHTML = cams.map((cid, i) => {
+    const tracks = win.tracks_by_camera[cid] || [];
+    const rel = win.reliability_by_camera[cid];
+    const seg = win.corridor_state ? win.corridor_state.segment_states.find(s => s.camera_id === cid) : null;
+    const flagged = new Set(win.safety_events.filter(e => e.camera_id === cid).map(e => e.track_id));
+    const role = cams.length > 1 ? (i === 0 ? "Upstream" : "Downstream") : "Single camera";
+    return panelHTML(`
+      <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20"><span class="font-mono text-data-md text-on-surface">${esc(cid)}</span>${badgeHTML("neutral", role)}</div>
+      <div class="p-md flex flex-col gap-sm">
+        <div class="grid grid-cols-3 gap-sm">
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Vehicles</span><span class="font-mono text-data-lg">${seg ? seg.vehicle_count : tracks.length}</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Mean speed</span><span class="font-mono text-data-lg">${seg ? (speedOrDash(seg.mean_speed, seg.mean_speed_available, 1) === null ? "speed unavailable" : fmt(seg.mean_speed.value, 1) + (seg.motion_space === "world" ? " m/s" : " px/s (image-space)")) : "—"}</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Reliability</span><span class="font-mono text-data-lg">${rel ? fmt(rel.score, 2) : "—"}</span></div>
+        </div>
+        ${seg ? `<div class="flex items-center gap-xs">${badgeHTML(CONGESTION_BADGE[seg.congestion_level], CONGESTION_LABEL[seg.congestion_level])}<span class="font-mono text-label-caps text-outline">occupancy ${fmt(seg.occupancy, 2)}</span></div>` : ""}
+        <div class="flex flex-wrap gap-xs">${tracks.map(t => `<span class="font-mono text-data-sm px-xs py-2xs rounded border ${flagged.has(t.track_id) ? "border-error/50 text-error bg-error/10" : "border-outline-variant/40 text-on-surface-variant"} cursor-pointer" data-track="${esc(t.track_id)}" data-cam="${esc(cid)}">${esc(tail(t.track_id))}</span>`).join("") || `<span class="text-body-sm text-on-surface-variant">No tracks.</span>`}</div>
+        <div data-inspector-for="${esc(cid)}"></div>
+      </div>`);
+  }).join("");
+  camsEl.querySelectorAll("[data-track]").forEach(el => el.addEventListener("click", () => {
+    const cid = el.dataset.cam;
+    const tr = (win.tracks_by_camera[cid] || []).find(t => t.track_id === el.dataset.track);
+    const slot = camsEl.querySelector(`[data-inspector-for="${CSS.escape(cid)}"]`);
+    slot.innerHTML = trackInspectorHTML(tr, win, { hideLink: true });
+  }));
+}
+
+/* =========================================================================
+ * View 1b -- V1 Dataset Showcase (AICity/CityFlow S02 c006)
+ *
+ * A SEPARATE dataset/artifact from demo.mp4 (ANVESH_DATA.real_video),
+ * fetched lazily via ensureShowcaseData() into showcaseData/
+ * showcaseLaneGeometry -- never merged into ANVESH_DATA. Renders the new
+ * V1 additions the rest of the dashboard cannot show for demo.mp4: lane
+ * geometry + assignment, provenance-aware speed, and evidence-backed
+ * candidate-vehicle resolution. Every other module route (Pipeline
+ * Diagnostics, Evidence Matrix, Cause Ranking, Safety Events) already
+ * works for this mode for free, via currentWindows()'s "showcase" branch.
+ * ========================================================================= */
+
+function showcaseImageUrl() {
+  const cfg = (typeof window !== "undefined" && window.ANVESH_LIVE_CONFIG) || {};
+  return cfg.showcaseImageUrl || null;
+}
+
+function showcaseCandidateTrackId(win) {
+  const cv = win && win.candidate_vehicle;
+  return (cv && cv.status === "resolved") ? cv.track_id : null;
+}
+
+function showcaseLoadingOrErrorHTML() {
+  if (showcaseLoadState === "error") {
+    return `<div class="p-lg">${panelHTML(`<div class="p-xl text-center flex flex-col items-center gap-sm">
+      <span class="material-symbols-outlined text-[32px] text-tertiary">report</span>
+      <div class="font-mono text-headline-sm text-on-surface">V1 Dataset Showcase data unavailable</div>
+      <p class="text-body-md text-on-surface-variant max-w-[520px]">${esc(showcaseLoadError || "The showcase data source is not configured for this build.")}</p>
+    </div>`)}</div>`;
+  }
+  return `<div class="p-lg">${panelHTML(`<div class="p-xl text-center flex flex-col items-center gap-sm">
+    <span class="material-symbols-outlined text-[32px] text-primary animate-pulse">hourglass_top</span>
+    <div class="font-mono text-headline-sm text-on-surface">Loading V1 Dataset Showcase&hellip;</div>
+    <p class="text-body-md text-on-surface-variant">Fetching AICity/CityFlow S02 c006 sample data.</p>
+  </div>`)}</div>`;
+}
+
+function showcaseSampleStatHTML(label, counts, labelMap) {
+  if (!counts) return "";
+  const text = Object.entries(counts).map(([k, v]) => `${(labelMap && labelMap[k]) || k}: ${v}`).join(" &middot; ");
+  return `<div class="flex flex-col gap-2xs col-span-2"><span class="font-mono text-label-caps text-outline">${esc(label)}</span><span class="font-mono text-data-sm">${text}</span></div>`;
+}
+
+function drawShowcaseOverlay(canvas) {
+  const rv = showcaseData.real_video;
+  if (canvas.width !== rv.video_width) canvas.width = rv.video_width;
+  if (canvas.height !== rv.video_height) canvas.height = rv.video_height;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Lane polygons -- exactly the vertices loaded from configs/lanes/
+  // s02_c006.toml (see scripts/export_s02_c006_lane_geometry.py), never
+  // hand-invented here. L2 is drawn dashed + amber; it is PROVISIONAL.
+  const lanes = (showcaseLaneGeometry && showcaseLaneGeometry.lanes) || [];
+  lanes.forEach(lane => {
+    ctx.beginPath();
+    lane.vertices.forEach(([x, y], i) => { if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.closePath();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = lane.provisional ? COLOR_HEX.warn : COLOR_HEX.info;
+    ctx.setLineDash(lane.provisional ? [10, 6] : []);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    const [lx, ly] = lane.vertices[0];
+    const laneLabel = lane.lane_id + (lane.provisional ? " (provisional)" : "");
+    ctx.font = "700 18px 'JetBrains Mono', monospace";
+    const tw = ctx.measureText(laneLabel).width;
+    ctx.fillStyle = lane.provisional ? COLOR_HEX.warn : COLOR_HEX.info;
+    ctx.fillRect(lx, Math.max(0, ly - 24), tw + 10, 22);
+    ctx.fillStyle = "#070d14";
+    ctx.fillText(laneLabel, lx + 5, Math.max(18, ly - 6));
+  });
+
+  // Only frame 0's own detections -- the ONLY frame this backdrop image
+  // actually corresponds to (t=0.0s). A different window's boxes are
+  // never drawn here; see the caption in renderShowcaseReplay.
+  const win = currentWindow();
+  const candidateFullId = showcaseCandidateTrackId(win);
+  const frame0 = showcaseFrames()[0];
+  if (frame0) {
+    ctx.font = "600 14px 'JetBrains Mono', monospace";
+    ctx.textBaseline = "bottom";
+    frame0.boxes.forEach(b => {
+      const [x1, y1, x2, y2] = b.bbox_xyxy;
+      const fullId = rv.camera_id + ":" + b.track_id;
+      const isCandidate = candidateFullId === fullId;
+      const isSelected = state.selectedTrack === fullId;
+      const color = isCandidate ? COLOR_HEX.bad : isSelected ? COLOR_HEX.good : "#8ed5ff";
+      ctx.lineWidth = (isCandidate || isSelected) ? 3 : 2;
+      ctx.strokeStyle = color;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      const laneTag = b.lane_status === "assigned" ? ` ${b.lane}` : "";
+      const label = `#${b.track_id} ${b.vehicle_class}${laneTag}${isCandidate ? " ★ CANDIDATE" : ""}`;
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = color;
+      ctx.fillRect(x1, Math.max(0, y1 - 18), tw + 8, 18);
+      ctx.fillStyle = "#070d14";
+      ctx.fillText(label, x1 + 4, Math.max(18, y1));
+    });
+  }
+}
+
+function renderShowcaseTrackChips(win) {
+  const container = document.getElementById("showcase-track-chips");
+  if (!container) return;
+  const rv = showcaseData.real_video;
+  const tracks = win.tracks_by_camera[rv.camera_id] || [];
+  const candidateFullId = showcaseCandidateTrackId(win);
+  // A track can have more than one segment in a window (occlusion gap --
+  // e.g. s02_c006:58 in window 1) -- de-duplicate by track_id for the
+  // chip list rather than showing the same track twice.
+  const byId = new Map();
+  tracks.forEach(t => { if (!byId.has(t.track_id)) byId.set(t.track_id, t); });
+  const list = Array.from(byId.values());
+  container.innerHTML = list.map(t => {
+    const isCandidate = t.track_id === candidateFullId;
+    const isSelected = state.selectedTrack === t.track_id;
+    const cls = isCandidate ? "border-error/60 text-error bg-error/10" : "border-outline-variant/40 text-on-surface-variant";
+    return `<span class="track-chip cursor-pointer font-mono text-data-sm px-xs py-2xs rounded border ${cls} ${isSelected ? "!border-primary !text-primary bg-primary/10" : ""}" data-track="${esc(t.track_id)}">${esc(tail(t.track_id))}${isCandidate ? " ★" : ""}</span>`;
+  }).join("") || `<span class="text-body-sm text-on-surface-variant">No tracks in this window.</span>`;
+  container.querySelectorAll("[data-track]").forEach(el => el.addEventListener("click", () => {
+    const id = el.dataset.track;
+    state.selectedTrack = state.selectedTrack === id ? null : id;
+    document.getElementById("showcase-inspector-slot").innerHTML = showcaseTrackInspectorHTML(state.selectedTrack, win);
+    renderShowcaseTrackChips(win);
+    const canvas = document.getElementById("showcase-overlay-canvas");
+    if (canvas) drawShowcaseOverlay(canvas);
+  }));
+}
+
+function showcaseTrackFrameObservations(tailId) {
+  const obs = [];
+  showcaseFrames().forEach(f => {
+    const b = f.boxes.find(bx => bx.track_id === tailId);
+    if (b) obs.push(Object.assign({ frame_index: f.frame_index, timestamp: f.timestamp }, b));
+  });
+  return obs;
+}
+
+function showcaseLaneSummary(obs) {
+  if (!obs.length) return { label: "UNAVAILABLE", detail: "No per-frame detection recorded for this track in the analyzed sample." };
+  const counts = {};
+  obs.forEach(o => { const k = o.lane_status || "not_computed"; counts[k] = (counts[k] || 0) + 1; });
+  const last = obs[obs.length - 1];
+  const distinctKeys = Object.keys(counts);
+  const stable = distinctKeys.length === 1;
+  const label = last.lane_status === "assigned" ? last.lane : (LANE_STATUS_LABEL[last.lane_status] || last.lane_status || "UNAVAILABLE");
+  const detail = stable
+    ? `Stable across all ${obs.length} observed frame${obs.length === 1 ? "" : "s"} of this track in the sample.`
+    : `Varies across the sample: ${distinctKeys.map(k => `${LANE_STATUS_LABEL[k] || k} (${counts[k]})`).join(", ")}.`;
+  return { label, detail };
+}
+
+// Visually distinguishes VALID APPROXIMATE (info/good) from UNRELIABLE --
+// OUTLIER (bad/red -- the SAME semantic red used for a resolved candidate
+// and a flagged safety event elsewhere in this dashboard, never a new,
+// unrelated color) from UNAVAILABLE (neutral).
+const SPEED_CONFIDENCE_COLOR = { validated: "good", approximate: "info", outlier: "bad", unavailable: "neutral" };
+
+function showcaseSpeedSummary(obs) {
+  if (!obs.length) return { label: "UNAVAILABLE", detail: "No per-frame detection recorded for this track in the analyzed sample.", color: "neutral" };
+  const last = obs[obs.length - 1];
+  const confidence = last.speed_confidence || "unavailable";
+  return {
+    label: last.speed || "UNAVAILABLE",
+    detail: SPEED_CONFIDENCE_LABEL[confidence] || "UNAVAILABLE",
+    color: SPEED_CONFIDENCE_COLOR[confidence] || "neutral",
+    status: last.speed_status || null,
+  };
+}
+
+function showcaseSupportingEvidence(fullTrackId, win) {
+  const items = [];
+  Object.values(win.evidence_by_camera || {}).forEach(arr => arr.forEach(it => {
+    if ((it.supporting_track_refs || []).includes(fullTrackId)) items.push(it);
+  }));
+  return items;
+}
+
+function showcaseCandidateSectionHTML(fullTrackId, win) {
+  const cv = win.candidate_vehicle || { status: "not_ranked", candidate_track_ids: [] };
+  const isThisTrack = cv.status === "resolved" && cv.track_id === fullTrackId;
+  const badgeColor = isThisTrack ? "bad" : (CANDIDATE_STATUS_COLOR[cv.status] || "neutral");
+  const badgeLabel = isThisTrack ? "EVIDENCE-BACKED CANDIDATE" : (CANDIDATE_STATUS_LABEL[cv.status] || cv.status);
+  let detail;
+  if (isThisTrack) {
+    detail = `Sole track named by ${cv.hypothesis_id}'s (${esc(HYPOTHESES[cv.hypothesis_id])}) own supporting evidence &mdash; belief ${pct(cv.belief)}, plausibility ${pct(cv.plausibility)}. This is candidate-cause reasoning, not proof of fault.`;
+  } else if (cv.status === "resolved") {
+    detail = `A different track (${esc(tail(cv.track_id))}) is this window's evidence-backed candidate, not this one.`;
+  } else if (cv.status === "ambiguous") {
+    detail = `${cv.candidate_track_ids.length} vehicles are equally named by ${cv.hypothesis_id}'s evidence (${cv.candidate_track_ids.map(tail).join(", ")}) &mdash; ANVESH does not arbitrarily pick one.`;
+  } else if (cv.status === "no_vehicle_for_hypothesis") {
+    detail = `Top hypothesis ${cv.hypothesis_id} (${esc(HYPOTHESES[cv.hypothesis_id])}, belief ${pct(cv.belief)}) describes a traffic condition, not a single vehicle &mdash; its own supporting evidence names no track.`;
+  } else {
+    detail = `The ranking abstained for this window (${OUTCOME_LABEL[win.candidate_ranking.outcome]}) &mdash; no candidate vehicle to resolve.`;
+  }
+  return `<div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Candidate status</span>${badgeHTML(badgeColor, badgeLabel)}</div><p class="text-body-sm text-on-surface-variant mt-2xs">${detail}</p>`;
+}
+
+function showcaseTrackInspectorHTML(fullTrackId, win) {
+  const rv = showcaseData.real_video;
+  const header = `<div class="flex items-center justify-between pb-xs border-b border-outline-variant/20">
+      <div class="flex items-center gap-xs"><span class="material-symbols-outlined text-primary text-[18px]">biotech</span><h2 class="font-mono text-headline-sm text-on-surface uppercase tracking-wider">Target Inspector</h2></div>
+      ${fullTrackId ? `<span class="px-xs py-2xs bg-primary/10 text-primary border border-primary/30 rounded font-mono text-label-caps">TRACK ${esc(tail(fullTrackId))}</span>` : ""}
+    </div>`;
+  const windowInferenceCard = `
+    <div class="bg-surface-container-low p-sm rounded border border-outline-variant/20 flex flex-col gap-xs">
+      <div class="flex items-center justify-between"><span class="font-mono text-label-caps text-outline">Window ${state.windowIndex + 1} relevant hypothesis</span>${badgeHTML(OUTCOME_COLOR[win.candidate_ranking.outcome], OUTCOME_LABEL[win.candidate_ranking.outcome])}</div>
+      <div class="font-mono text-primary text-[11px] bg-surface-container px-2 py-1 rounded">${topTiedSummary(win)}</div>
+    </div>`;
+  const linkFooter = `<a class="w-full py-sm bg-surface-container-high hover:bg-surface-bright text-primary border border-outline-variant/40 rounded font-mono text-label-sm flex items-center justify-center gap-xs transition-colors group" href="#evidence-matrix"><span>Inspect deeper evidence</span><span class="material-symbols-outlined text-[16px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span></a>`;
+
+  if (!fullTrackId) {
+    return `<div class="flex flex-col gap-sm">${header}<div class="text-body-sm text-on-surface-variant py-sm text-center">Select a track below to inspect it.</div>${windowInferenceCard}${linkFooter}</div>`;
+  }
+
+  const track = (win.tracks_by_camera[rv.camera_id] || []).find(t => t.track_id === fullTrackId);
+  const tailId = tail(fullTrackId);
+  const obs = showcaseTrackFrameObservations(tailId);
+  const lane = showcaseLaneSummary(obs);
+  const speed = showcaseSpeedSummary(obs);
+  const evidence = showcaseSupportingEvidence(fullTrackId, win);
+  const vehicleClass = track ? track.vehicle_class : ((obs[0] && obs[0].vehicle_class) || "UNAVAILABLE");
+
+  return `
+  <div class="flex flex-col gap-sm">
+    ${header}
+    <div class="flex flex-col gap-xs bg-surface-container-low p-sm rounded border border-outline-variant/20">
+      <div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Vehicle class</span><span class="font-mono text-data-sm text-on-surface">${esc(vehicleClass)}</span></div>
+      <div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Lane</span><span class="font-mono text-data-sm text-primary font-bold">${esc(lane.label)}</span></div>
+      <div class="text-body-sm text-on-surface-variant/80">${esc(lane.detail)}</div>
+      <div class="flex items-center justify-between pt-xs border-t border-outline-variant/10"><span class="text-body-sm text-on-surface-variant">Speed</span>${badgeHTML(speed.color, speed.label)}</div>
+      <div class="text-body-sm text-on-surface-variant/80">${esc(speed.detail)}${speed.status && speed.status !== "ok" ? ` &middot; status: ${esc(speed.status)}` : ""}</div>
+      ${track ? `<div class="flex items-center justify-between pt-xs border-t border-outline-variant/10"><span class="text-body-sm text-on-surface-variant">Track span (window)</span><span class="font-mono text-data-sm text-on-surface">${fmt(track.first_seen,1)}s &ndash; ${fmt(track.last_seen,1)}s</span></div>
+      <div class="flex items-center justify-between"><span class="text-body-sm text-on-surface-variant">Observations (window)</span><span class="font-mono text-data-sm text-on-surface">${track.observation_count}</span></div>` : `<div class="text-body-sm text-on-surface-variant pt-xs border-t border-outline-variant/10">Window-level track record: UNAVAILABLE for this track in the selected window.</div>`}
+    </div>
+    <div class="bg-surface-container-low p-sm rounded border border-outline-variant/20">
+      ${showcaseCandidateSectionHTML(fullTrackId, win)}
+    </div>
+    <div class="bg-surface-container-low p-sm rounded border border-outline-variant/20 flex flex-col gap-xs">
+      <span class="font-mono text-label-caps text-outline">Supporting evidence citing this track</span>
+      ${evidence.length ? evidence.map(it => `<div class="flex items-center justify-between font-mono text-body-sm"><span>${it.hypothesis_id} ${esc(it.evidence_type)}</span>${badgeHTML(DIRECTION_COLOR[it.direction], DIRECTION_LABEL[it.direction])}</div>`).join("") : `<div class="text-body-sm text-on-surface-variant">UNAVAILABLE &mdash; no evidence item in this window cites this track directly.</div>`}
+    </div>
+    ${windowInferenceCard}
+    ${linkFooter}
+  </div>`;
+}
+
+function renderShowcaseReplay(root) {
+  const rv = showcaseData.real_video;
+  const win = currentWindow();
+  const imgUrl = showcaseImageUrl();
+  const report = showcaseData.report || {};
+  root.innerHTML = `
+  <div class="p-lg flex flex-col gap-md">
+    <div class="bg-primary/10 border border-primary/30 rounded-lg p-md flex items-start gap-sm">
+      <span class="material-symbols-outlined text-primary text-[20px]">dataset</span>
+      <div>
+        <div class="font-mono text-headline-sm text-primary uppercase tracking-wide">V1 Dataset Showcase &mdash; AICity/CityFlow S02 c006, not demo.mp4</div>
+        <p class="text-body-md text-on-surface-variant mt-2xs max-w-[900px]">Lane + speed + calibration-aware showcase, produced by the real ANVESH engine (<code class="font-mono text-primary">scripts/run_s02_c006_showcase.py</code>) over a ${fmt(rv.sampled_duration_s,0)}s bounded sample of camera <span class="font-mono">${esc(rv.camera_id)}</span>. A separate camera and dataset from Real Video Replay's demo.mp4 &mdash; never mixed with it.</p>
+      </div>
+    </div>
+    <div class="flex items-center justify-between pb-sm border-b border-outline-variant/20 flex-wrap gap-sm">
+      <div class="flex items-center gap-md flex-wrap">
+        <div class="flex items-center gap-xs"><span class="w-2 h-2 rounded-full bg-primary"></span><span class="font-mono text-data-md text-primary tracking-wide">${esc(rv.camera_id.toUpperCase())}</span></div>
+        <span class="text-outline">|</span>
+        <span class="text-on-surface-variant font-mono text-label-sm">${esc(rv.video_name)} &middot; ${rv.video_width}&times;${rv.video_height} &middot; CityFlow-supplied homography &mdash; speed is calibration-derived, not metric-validated (see Target Inspector)</span>
+      </div>
+      <div id="stepper-slot"></div>
+    </div>
+    <div class="grid grid-cols-12 gap-md items-start">
+      <div class="col-span-12 xl:col-span-9 flex flex-col gap-md">
+        <div class="relative w-full bg-black rounded-lg border border-outline-variant/30 overflow-hidden">
+          ${imgUrl
+            ? `<img id="showcase-frame-img" src="${esc(imgUrl)}" class="block w-full h-auto" alt="c006 reference frame, t=0.0s">`
+            : `<div class="w-full aspect-video flex items-center justify-center text-on-surface-variant text-body-sm">No reference frame image configured for this build.</div>`}
+          <canvas id="showcase-overlay-canvas" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+          <div class="absolute top-sm left-sm px-sm py-2xs bg-surface-container-lowest/90 backdrop-blur border border-outline-variant/40 rounded flex items-center gap-xs font-mono text-label-caps text-on-surface tracking-widest"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span>REFERENCE FRAME &middot; t=0.0s</div>
+          <div class="absolute bottom-sm left-sm right-sm px-sm py-2xs bg-surface-container-lowest/90 backdrop-blur border border-outline-variant/40 rounded font-mono text-label-caps text-on-surface-variant">Lane geometry + frame-0 detections only &mdash; no video capture is embedded for this camera. The window stepper changes the panels below, not this image.</div>
+        </div>
+        ${panelHTML(`<div class="p-md grid grid-cols-2 sm:grid-cols-4 gap-sm">
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">GPU</span><span class="font-mono text-data-sm">${rv.gpu.cuda_available ? esc(rv.gpu.device_name) : "CPU (CUDA unavailable)"}</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Perception</span><span class="font-mono text-data-sm">${esc(rv.perception_method)}</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Sample coverage</span><span class="font-mono text-data-sm">${mmss(rv.sampled_duration_s)} of ${mmss(rv.full_video_duration_s)} total</span></div>
+          <div class="flex flex-col gap-2xs"><span class="font-mono text-label-caps text-outline">Total tracks (sample)</span><span class="font-mono text-data-sm">${rv.total_tracks}</span></div>
+          <div class="flex flex-col gap-2xs col-span-2"><span class="font-mono text-label-caps text-outline">Lane geometry</span><span class="font-mono text-data-sm">${showcaseLaneGeometry ? `${showcaseLaneGeometry.lanes.length} region(s) configured &middot; ${esc(showcaseLaneGeometry.provenance)}` : "Lane geometry sidecar unavailable"}</span></div>
+          ${showcaseSampleStatHTML("Lane assignment (whole sample)", report.lane_status_counts, LANE_STATUS_LABEL)}
+          ${showcaseSampleStatHTML("Speed confidence (whole sample, by track)", report.speed_confidence_counts, SPEED_CONFIDENCE_LABEL)}
+          ${showcaseSampleStatHTML("Candidate status (per 10s window)", report.candidate_status_counts, CANDIDATE_STATUS_LABEL)}
+        </div>`)}
+        <div class="flex flex-wrap gap-xs" id="showcase-track-chips"></div>
+      </div>
+      <div class="col-span-12 xl:col-span-3" id="showcase-inspector-slot">${showcaseTrackInspectorHTML(state.selectedTrack, win)}</div>
+    </div>
+  </div>`;
+  document.getElementById("stepper-slot").innerHTML = windowStepperHTML("sc");
+  wireWindowStepper(root, "sc", () => renderShowcaseReplay(root));
+  const canvas = document.getElementById("showcase-overlay-canvas");
+  if (canvas) drawShowcaseOverlay(canvas);
+  renderShowcaseTrackChips(win);
+}
+</script>
+<script id="anvesh-app-4">
+"use strict";
+
+/* =========================================================================
+ * View 2 -- Pipeline Diagnostics
+ * ========================================================================= */
+
+function pipelineStages(win) {
+  const cams = win.camera_ids;
+  const anyTrack = Object.values(win.tracks_by_camera).flat()[0];
+  const motionSpace = anyTrack ? anyTrack.motion_space : "world";
+  const evidenceCount = Object.values(win.evidence_by_camera).reduce((n, arr) => n + arr.length, 0);
+  const isReal = state.mode !== "synthetic"; // "real" and "showcase" both come from an actual video, never hand-authored
+  const rv = state.mode === "showcase" ? showcaseData.real_video : ANVESH_DATA.real_video;
+  const stages = [
+    { id: "input", icon: "videocam", title: "Video Input", status: "ok",
+      detail: isReal ? `${rv.video_width}&times;${rv.video_height} &middot; ${fmt(rv.video_fps,2)} fps &middot; ${rv.video_name}` : "Hand-authored WORLD-space tracks (no video)" },
+    { id: "detection", icon: "center_focus_strong", title: "Detection", status: "ok",
+      detail: isReal ? esc(rv.perception_method.split(" + ")[0]) : "N/A &mdash; explicit synthetic trajectories" },
+    { id: "tracking", icon: "timeline", title: "Tracking", status: "ok",
+      detail: isReal ? esc(rv.perception_method.split(" + ")[1] || rv.perception_method) : "N/A &mdash; explicit synthetic trajectories" },
+    { id: "world", icon: "public", title: "World State", status: motionSpace === "world" ? "ok" : "limited",
+      detail: motionSpace === "world" ? "Calibrated WORLD-space (metres)" : "Uncalibrated &mdash; IMAGE-space (pixels) only" },
+    { id: "evidence", icon: "fingerprint", title: "Evidence Extr.", status: "ok", detail: `${evidenceCount} signature${evidenceCount === 1 ? "" : "s"} across ${cams.length} camera${cams.length === 1 ? "" : "s"}` },
+    { id: "fusion", icon: "hub", title: "Evidential Fusion", status: win.candidate_ranking.outcome === "high_conflict" ? "limited" : "ok", detail: `Dempster-Shafer &middot; outcome: ${OUTCOME_LABEL[win.candidate_ranking.outcome]}` },
+    { id: "ranking", icon: "account_tree", title: "Cause Ranking", status: "ok", detail: topTiedSummary(win) },
+    { id: "propagation", icon: "call_split", title: "Propagation", status: win.propagation_prediction ? "ok" : "gated",
+      detail: win.propagation_prediction ? `Arrival at ${esc(win.propagation_prediction.predicted_arrival_camera)}, t=${fmt(win.propagation_prediction.predicted_arrival_time,1)}s` : esc(win.propagation_reason || win.corridor_state_reason || "unavailable") },
+  ];
+  return stages;
+}
+const STAGE_STATUS_COLOR = { ok: "good", limited: "warn", gated: "neutral" };
+const STAGE_STATUS_LABEL = { ok: "OK", limited: "LIMITED", gated: "GATED" };
+
+let selectedStageId = "fusion";
+
+function stageDetailHTML(stage, win) {
+  const rel = win.reliability_by_camera;
+  let extra = "";
+  if (stage.id === "fusion") {
+    extra = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-sm mt-sm">${Object.keys(rel).map(cid => `
+      <div class="bg-surface-container-low p-sm rounded border border-outline-variant/20">
+        <div class="font-mono text-label-caps text-outline mb-2xs">${esc(cid)} reliability</div>
+        <div class="font-mono text-data-lg text-primary">${fmt(rel[cid].score, 3)}</div>
+        <div class="flex flex-col gap-2xs mt-xs">${Object.entries(rel[cid].factors).map(([k, v]) => `<div class="flex items-center justify-between text-body-sm"><span class="text-on-surface-variant">${esc(k.replace(/_/g, " "))}</span><span class="font-mono text-on-surface">${fmt(v, 2)}</span></div>`).join("")}</div>
+      </div>`).join("")}</div>`;
+  } else if (stage.id === "ranking") {
+    extra = `<div class="flex flex-wrap gap-xs mt-sm">${win.candidate_ranking.ranked_list.map(e => badgeHTML(TIER_COLOR[e.confidence_tier], `${e.hypothesis_id} ${pct(e.belief)}`)).join("")}</div>`;
+  } else if (stage.id === "propagation" && win.propagation_prediction) {
+    const p = win.propagation_prediction;
+    extra = `<dl class="grid grid-cols-2 gap-x-md gap-y-xs mt-sm font-mono text-body-sm">
+      <dt class="text-on-surface-variant">Shockwave speed</dt><dd>${fmt(Math.abs(p.predicted_shockwave_speed.value),1)} m/s (${p.predicted_shockwave_speed.value < 0 ? "upstream" : "downstream"})</dd>
+      <dt class="text-on-surface-variant">Queue growth</dt><dd>${fmt(p.predicted_queue_growth_rate,1)} veh/min</dd>
+      <dt class="text-on-surface-variant">Method</dt><dd>${esc(p.method)}</dd>
+    </dl>`;
+  } else if (stage.id === "evidence") {
+    extra = `<div class="flex flex-col gap-xs mt-sm">${Object.entries(win.evidence_by_camera).map(([cid, items]) => `
+      <div class="font-mono text-label-caps text-outline">${esc(cid)}</div>
+      <div class="flex flex-wrap gap-xs mb-xs">${items.map(it => badgeHTML(DIRECTION_COLOR[it.direction], `${it.hypothesis_id} ${DIRECTION_LABEL[it.direction]}`)).join("")}</div>`).join("")}</div>`;
+  }
+  return `
+    <div class="flex items-center justify-between pb-sm border-b border-outline-variant/20">
+      <div class="flex items-center gap-xs"><span class="material-symbols-outlined text-primary text-[20px]">${stage.icon}</span><h2 class="font-mono text-headline-md text-on-surface">${esc(stage.title)}</h2></div>
+      ${badgeHTML(STAGE_STATUS_COLOR[stage.status], STAGE_STATUS_LABEL[stage.status])}
+    </div>
+    <p class="text-body-md text-on-surface-variant mt-sm">${stage.detail}</p>
+    ${extra}
+    ${win.limitations && win.limitations.length ? `<div class="mt-md bg-tertiary/10 border border-tertiary/30 rounded p-sm flex gap-xs items-start"><span class="material-symbols-outlined text-tertiary text-[16px] mt-0.5">info</span><div class="text-body-sm text-on-surface-variant">${win.limitations.map(esc).join("<br>")}</div></div>` : ""}
+  `;
+}
+
+function renderPipelineDiagnostics(root) {
+  const win = currentWindow();
+  const stages = pipelineStages(win);
+  if (!stages.find(s => s.id === selectedStageId)) selectedStageId = "fusion";
+  root.innerHTML = `
+  <div class="p-lg flex flex-col gap-md">
+    <div class="flex items-center justify-between flex-wrap gap-sm">
+      <div class="flex items-center gap-sm"><span class="w-2 h-2 rounded-full bg-secondary"></span><span class="font-mono text-label-caps text-on-surface-variant">Session outcome: ${OUTCOME_LABEL[win.candidate_ranking.outcome]}</span></div>
+      <div id="stepper-slot"></div>
+    </div>
+    ${panelHTML(`
+      <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20"><span class="font-mono text-headline-sm text-on-surface">Analytical Journey</span><span class="font-mono text-label-caps text-outline">${stages.length} stages</span></div>
+      <div class="p-md flex items-center gap-0 overflow-x-auto" id="stage-dag">
+        ${stages.map((s, i) => `
+          <div class="flex items-center ${i < stages.length - 1 ? "flex-1" : ""}">
+            <button class="flex flex-col items-center gap-2xs group" data-stage="${s.id}" type="button">
+              <div class="w-11 h-11 rounded flex items-center justify-center border-2 transition-colors ${selectedStageId === s.id ? "border-primary bg-primary/10" : "border-outline-variant/40 bg-surface-container-low"}">
+                <span class="material-symbols-outlined text-[20px] ${selectedStageId === s.id ? "text-primary" : STAGE_STATUS_COLOR[s.status] === "good" ? "text-secondary" : STAGE_STATUS_COLOR[s.status] === "warn" ? "text-tertiary" : "text-outline"}">${s.icon}</span>
+              </div>
+              <span class="font-mono text-data-sm ${STAGE_STATUS_COLOR[s.status] === "good" ? "text-secondary" : STAGE_STATUS_COLOR[s.status] === "warn" ? "text-tertiary" : "text-outline"}">${String(i + 1).padStart(2, "0")} &middot; ${STAGE_STATUS_LABEL[s.status]}</span>
+              <span class="text-body-sm text-on-surface text-center max-w-[90px] leading-tight">${esc(s.title)}</span>
+            </button>
+            ${i < stages.length - 1 ? `<div class="flex-1 h-px ${STAGE_STATUS_COLOR[s.status] === "good" ? "bg-secondary/40" : "bg-outline-variant/30"} mx-1 mb-6"></div>` : ""}
+          </div>`).join("")}
+      </div>`)}
+    <div id="stage-detail">${panelHTML(`<div class="p-md">${stageDetailHTML(stages.find(s => s.id === selectedStageId), win)}</div>`)}</div>
+  </div>`;
+  document.getElementById("stepper-slot").innerHTML = windowStepperHTML("pd");
+  wireWindowStepper(root, "pd", () => renderPipelineDiagnostics(root));
+  document.getElementById("stage-dag").querySelectorAll("[data-stage]").forEach(b => b.addEventListener("click", () => {
+    selectedStageId = b.dataset.stage; renderPipelineDiagnostics(root);
+  }));
+}
+
+/* =========================================================================
+ * View 3 -- Evidence Matrix
+ * ========================================================================= */
+
+let evidenceMatrixCam = null;
+
+function reliabilityFactorLabel(v) { return v >= 0.75 ? "OPTIMAL" : v >= 0.5 ? "NOMINAL" : v > 0 ? "PARTIAL" : "DEGRADED"; }
+function reliabilityFactorColor(v) { return v >= 0.75 ? "good" : v >= 0.5 ? "info" : v > 0 ? "warn" : "bad"; }
+
+function renderEvidenceMatrix(root) {
+  const win = currentWindow();
+  const cams = win.camera_ids;
+  if (!evidenceMatrixCam || !cams.includes(evidenceMatrixCam)) evidenceMatrixCam = cams[0];
+  const rel = win.reliability_by_camera[evidenceMatrixCam];
+  const items = win.evidence_by_camera[evidenceMatrixCam] || [];
+
+  root.innerHTML = `
+  <div class="p-lg flex flex-col gap-md">
+    <div class="flex items-center justify-between flex-wrap gap-sm">
+      <div>
+        <div class="font-mono text-label-caps text-outline">ANVESH forensic telemetry &middot; T-inference engine</div>
+        <h1 class="font-mono text-headline-lg text-on-surface mt-2xs">Evidential Assessment &mdash; Window ${state.windowIndex + 1} <span class="text-on-surface-variant font-normal text-headline-sm">(${mmss(win.window[0])}&ndash;${mmss(win.window[1])})</span></h1>
+      </div>
+      <div id="stepper-slot"></div>
+    </div>
+    <p class="text-body-md text-on-surface-variant max-w-[820px]">Multi-hypothesis belief fusion across ${cams.length} camera${cams.length === 1 ? "" : "s"}. Real-time evidential scoring against telemetry constraints, tracking continuity, and per-camera reliability.</p>
+    <div class="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-md items-start">
+      ${panelHTML(`
+        <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20">
+          <span class="font-mono text-label-caps uppercase text-outline">Camera reliability profile</span>
+          ${cams.length > 1 ? `<div class="flex gap-2xs" id="cam-tabs">${cams.map(c => `<button data-cam="${esc(c)}" class="px-xs py-2xs font-mono text-label-caps rounded border ${c === evidenceMatrixCam ? "border-primary text-primary bg-primary/10" : "border-outline-variant/40 text-on-surface-variant"}" type="button">${esc(c)}</button>`).join("")}</div>` : `<span class="font-mono text-label-caps text-outline">${esc(evidenceMatrixCam)}</span>`}
+        </div>
+        <div class="p-md flex flex-col gap-md items-center">
+          <div class="relative w-[160px] h-[160px]">
+            <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
+              <circle cx="50" cy="50" r="42" fill="none" stroke="#232a36" stroke-width="10"></circle>
+              <circle cx="50" cy="50" r="42" fill="none" stroke="#38bdf8" stroke-width="10" stroke-linecap="round" stroke-dasharray="${2 * Math.PI * 42}" stroke-dashoffset="${2 * Math.PI * 42 * (1 - rel.score)}"></circle>
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center"><span class="font-mono text-label-caps text-outline">SENSOR INDEX</span><span class="font-mono text-data-lg text-primary text-[22px]">${fmt(rel.score, 3)}</span><span class="font-mono text-label-caps text-outline">/ 1.000</span></div>
+          </div>
+          <div class="w-full flex flex-col gap-sm">
+            ${Object.entries(rel.factors).map(([k, v]) => `
+              <div class="flex flex-col gap-2xs">
+                <div class="flex items-center justify-between"><span class="text-body-md text-on-surface">${esc(k.replace(/_/g, " "))}</span><span class="font-mono text-data-sm ${badgeTextColor(reliabilityFactorColor(v))}">${reliabilityFactorLabel(v)}</span></div>
+                <div class="w-full h-1.5 bg-surface-container-high rounded overflow-hidden"><div class="h-full rounded" style="width:${pct(v)};background:${COLOR_HEX[reliabilityFactorColor(v)]}"></div></div>
+              </div>`).join("")}
+            <div class="text-body-sm text-on-surface-variant pt-xs border-t border-outline-variant/10">Method: <span class="font-mono">${esc(rel.method)}</span></div>
+          </div>
+        </div>`)}
+      ${panelHTML(`
+        <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20"><span class="font-mono text-label-caps uppercase text-outline">Hypothesis direction &amp; evidence signatures</span><span class="font-mono text-label-caps text-outline">${items.length} propositions</span></div>
+        <div class="divide-y divide-outline-variant/10">
+          ${items.map(it => `
+            <div class="flex items-center justify-between gap-md px-md py-sm">
+              <div class="min-w-0">
+                <div class="flex items-center gap-xs"><span class="font-mono text-primary text-data-sm">${it.hypothesis_id}</span><span class="text-body-md text-on-surface font-semibold">${esc(HYPOTHESES[it.hypothesis_id])}</span></div>
+                <div class="text-body-sm text-on-surface-variant mt-2xs">Completeness: <strong class="text-on-surface">${COMPLETENESS_LABEL[it.evidence_completeness]}</strong> &middot; Signature score: <strong class="font-mono text-on-surface">${fmt(it.signature_match_score, 2)}</strong> &middot; <span class="font-mono">${esc(it.evidence_type)}</span>${it.contradicting ? ` &middot; <span class="text-error">contradicts ranking</span>` : ""}</div>
+              </div>
+              ${badgeHTML(DIRECTION_COLOR[it.direction], DIRECTION_LABEL[it.direction])}
+            </div>`).join("")}
+        </div>
+        <div class="px-md py-sm border-t border-outline-variant/20 flex items-center justify-between">
+          ${badgeHTML(OUTCOME_COLOR[win.candidate_ranking.outcome], "Fused outcome: " + OUTCOME_LABEL[win.candidate_ranking.outcome])}
+          <a href="#cause-ranking" class="font-mono text-label-sm text-primary hover:underline">See combined belief masses &rarr;</a>
+        </div>`)}
+    </div>
+  </div>`;
+  document.getElementById("stepper-slot").innerHTML = windowStepperHTML("em");
+  wireWindowStepper(root, "em", () => renderEvidenceMatrix(root));
+  const tabs = document.getElementById("cam-tabs");
+  if (tabs) tabs.querySelectorAll("[data-cam]").forEach(b => b.addEventListener("click", () => { evidenceMatrixCam = b.dataset.cam; renderEvidenceMatrix(root); }));
+}
+function badgeTextColor(color) { return { good: "text-secondary", warn: "text-tertiary", bad: "text-error", info: "text-primary", neutral: "text-outline" }[color]; }
+</script>
+<script id="anvesh-app-5">
+"use strict";
+
+/* =========================================================================
+ * View 4 -- Cause Ranking
+ * ========================================================================= */
+
+function tieExplanation(top, win) {
+  if (top.length < 2) return "";
+  const cams = Object.keys(win.evidence_by_camera);
+  const parts = top.map(e => {
+    const cam = cams.find(c => (win.evidence_by_camera[c] || []).some(i => i.hypothesis_id === e.hypothesis_id));
+    const item = cam ? win.evidence_by_camera[cam].find(i => i.hypothesis_id === e.hypothesis_id) : null;
+    return item ? `${e.hypothesis_id} (${esc(item.evidence_type.replace(/_/g, " "))}, ${COMPLETENESS_LABEL[item.evidence_completeness].toLowerCase()} completeness)` : e.hypothesis_id;
+  });
+  return `Under this window's ${cams.length === 1 ? "single uncalibrated camera" : "fused multi-camera"} evidence, ${parts.join(" and ")} report equal belief mass (${pct(top[0].belief)} each) with no contradicting evidence between them &mdash; the engine reports a tie rather than arbitrarily breaking it.`;
+}
+
+function renderCauseRanking(root) {
+  const win = currentWindow();
+  const ranking = win.candidate_ranking;
+  const top = topTiedEntries(win);
+  const topIds = new Set(top.map(e => e.hypothesis_id));
+  const rest = ranking.ranked_list.filter(e => !topIds.has(e.hypothesis_id));
+
+  let body;
+  if (ranking.outcome !== "ranked" || !top.length) {
+    body = panelHTML(`<div class="p-xl text-center flex flex-col items-center gap-sm">
+      ${badgeHTML(OUTCOME_COLOR[ranking.outcome], OUTCOME_LABEL[ranking.outcome])}
+      <p class="text-body-md text-on-surface-variant max-w-[520px]">No hypothesis distinguishes itself in this window &mdash; ANVESH abstains rather than fabricate a cause.</p>
+    </div>`);
+  } else {
+    body = `
+    <div class="grid grid-cols-1 ${top.length > 1 ? "md:grid-cols-2" : ""} gap-md">
+      ${top.map(e => {
+        const cam = Object.keys(win.evidence_by_camera).find(c => (win.evidence_by_camera[c] || []).some(i => i.hypothesis_id === e.hypothesis_id));
+        const item = cam ? win.evidence_by_camera[cam].find(i => i.hypothesis_id === e.hypothesis_id) : null;
+        return panelHTML(`
+          <div class="p-md flex flex-col gap-sm">
+            <div class="flex items-center justify-between"><div class="flex items-center gap-xs"><span class="font-mono text-primary">${e.hypothesis_id}</span><span class="text-headline-md font-semibold text-on-surface">${esc(HYPOTHESES[e.hypothesis_id])}</span></div>${badgeHTML(top.length > 1 ? "info" : TIER_COLOR[e.confidence_tier], top.length > 1 ? "co-dominant" : e.confidence_tier)}</div>
+            <div class="flex items-center justify-between font-mono text-body-sm"><span>Belief [Bel]: <strong class="text-on-surface">${fmt(e.belief, 2)}</strong></span><span>Plausibility [Pl]: <strong class="text-on-surface">${fmt(e.plausibility, 2)}</strong></span></div>
+            <div class="w-full h-2 bg-surface-container-high rounded overflow-hidden"><div class="h-full bg-primary" style="width:${pct(e.belief)}"></div></div>
+            ${item ? `<div class="grid grid-cols-2 gap-sm mt-xs bg-surface-container-low p-sm rounded border border-outline-variant/20 font-mono text-body-sm"><div><div class="text-outline text-label-caps">Evidence type</div><div class="text-on-surface">${esc(item.evidence_type)}</div></div><div><div class="text-outline text-label-caps">Mass assignment</div><div class="text-on-surface">m({${e.hypothesis_id}}) = ${fmt(e.belief, 2)}</div></div></div>` : ""}
+          </div>`);
+      }).join("")}
+    </div>
+    ${top.length > 1 ? panelHTML(`<div class="p-md flex gap-sm items-start"><span class="material-symbols-outlined text-primary text-[18px] mt-0.5">balance</span><div><div class="font-mono text-label-caps text-outline mb-2xs">Why these are tied</div><p class="text-body-md text-on-surface-variant">${tieExplanation(top, win)}</p></div></div>`, "mt-md") : ""}
+    ${rest.length ? `<div class="mt-md">
+      <div class="flex items-center justify-between mb-sm"><span class="font-mono text-label-caps uppercase text-outline">Secondary hypotheses</span><span class="font-mono text-label-caps text-outline">${rest.length} not selected</span></div>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-sm">
+        ${rest.map(e => {
+          const cam = Object.keys(win.evidence_by_camera).find(c => (win.evidence_by_camera[c] || []).some(i => i.hypothesis_id === e.hypothesis_id));
+          const item = cam ? win.evidence_by_camera[cam].find(i => i.hypothesis_id === e.hypothesis_id) : null;
+          return panelHTML(`<div class="p-sm flex flex-col gap-xs">
+            <div class="flex items-center justify-between"><span class="font-mono text-on-surface-variant text-data-sm">${e.hypothesis_id}</span>${badgeHTML(TIER_COLOR[e.confidence_tier], e.confidence_tier)}</div>
+            <div class="text-body-sm text-on-surface">${esc(HYPOTHESES[e.hypothesis_id])}</div>
+            <div class="font-mono text-body-sm text-on-surface-variant">Bel: ${fmt(e.belief,2)} &middot; Pl: ${fmt(e.plausibility,2)}</div>
+            ${item ? `<div class="text-body-sm text-on-surface-variant">${DIRECTION_LABEL[item.direction]} &middot; ${esc(item.evidence_type)}</div>` : ""}
+          </div>`);
+        }).join("")}
+      </div>
+    </div>` : ""}
+    ${state.mode !== "synthetic" && top.length > 1 ? panelHTML(`<div class="p-md flex items-center justify-between gap-md flex-wrap">
+      <div>${badgeHTML("good", "resolution vector available")}<div class="font-mono text-headline-sm text-on-surface mt-2xs">Cross-camera disambiguation</div><p class="text-body-sm text-on-surface-variant">A single uncalibrated camera cannot break this tie. See how a real two-camera synthetic run resolves the same class of tie once a second camera's evidence is fused in.</p></div>
+      <a href="#synthetic/cross-camera-agreement" class="px-md py-sm bg-primary text-on-primary rounded font-mono text-label-sm font-semibold flex items-center gap-xs shrink-0"><span class="material-symbols-outlined text-[16px]">sync_alt</span>Compare cross-camera scenario</a>
+    </div>`, "mt-md") : ""}
+    `;
+  }
+
+  root.innerHTML = `
+  <div class="p-lg flex flex-col gap-md">
+    <div class="flex items-center justify-between flex-wrap gap-sm">
+      <div class="flex items-center gap-sm">${badgeHTML(OUTCOME_COLOR[ranking.outcome], OUTCOME_LABEL[ranking.outcome])}<h1 class="font-mono text-headline-lg text-on-surface">Root Cause Hypothesis Ranking</h1></div>
+      <div id="stepper-slot"></div>
+    </div>
+    <div class="flex items-center gap-xs text-body-sm text-on-surface-variant bg-surface-container-lowest border border-outline-variant/20 rounded p-sm"><span class="material-symbols-outlined text-primary text-[16px]">info</span>Belief is a Dempster-Shafer evidential measure, not a classical probability. Ranking is candidate-cause reasoning, not causal proof.</div>
+    ${body}
+  </div>`;
+  document.getElementById("stepper-slot").innerHTML = windowStepperHTML("cr");
+  wireWindowStepper(root, "cr", () => renderCauseRanking(root));
+}
+
+/* =========================================================================
+ * View 5 -- Safety Events
+ * ========================================================================= */
+
+let selectedIncidentId = null;
+
+function renderSafetyEvents(root) {
+  const windows = currentWindows();
+  const incidents = uniqueIncidents(windows);
+  const perWindowCounts = windows.map(w => w.safety_events.length);
+  const totalInstances = perWindowCounts.reduce((a, b) => a + b, 0);
+  const peakIdx = perWindowCounts.indexOf(Math.max(...perWindowCounts));
+  if (!selectedIncidentId && incidents.length) selectedIncidentId = incidents[0].event_id;
+  const selected = incidents.find(i => i.event_id === selectedIncidentId) || null;
+
+  root.innerHTML = `
+  <div class="p-lg flex flex-col gap-md">
+    <div class="flex items-center justify-between gap-md flex-wrap">
+      <h1 class="font-mono text-headline-lg text-on-surface">Safety Event Registry</h1>
+      <div class="flex items-center gap-sm flex-wrap">
+        <div class="flex items-center gap-xs text-body-sm text-tertiary bg-tertiary/10 border border-tertiary/30 rounded px-sm py-xs"><span class="material-symbols-outlined text-[15px]">info</span>Informational analysis only &mdash; not dispatch or enforcement automation.</div>
+        ${badgeHTML("bad", `${totalInstances} window-instances`)}${badgeHTML("neutral", `${incidents.length} unique tracks`)}
+      </div>
+    </div>
+    ${panelHTML(`
+      <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20"><span class="font-mono text-label-caps uppercase text-outline">Temporal distribution &middot; ${windows.length} windows &middot; ${WINDOW_SECONDS|0}s resolution</span>${incidents.length ? `<span class="font-mono text-label-caps text-error">Peak: window ${peakIdx+1} (${perWindowCounts[peakIdx]} events)</span>` : ""}</div>
+      <div class="p-md">
+        <div class="h-[90px]">${sparklineSVG(perWindowCounts, { height: 90 })}</div>
+        <div class="flex justify-between mt-xs font-mono text-label-caps text-outline">${windows.map((w, i) => i % Math.max(1, Math.floor(windows.length / 8)) === 0 ? `<span>W${i+1} ${mmss(w.window[0])}</span>` : "").join("")}</div>
+      </div>`)}
+    <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-md items-start">
+      ${panelHTML(`
+        <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20"><span class="font-mono text-label-caps uppercase text-outline">Clustered incidents</span><span class="font-mono text-label-caps text-outline">${incidents.length} tracked</span></div>
+        <div class="divide-y divide-outline-variant/10 max-h-[520px] overflow-y-auto" id="incident-list">
+          ${incidents.length ? incidents.map(inc => {
+            const dwell = inc.window[1] - inc.window[0];
+            return `<button data-inc="${esc(inc.event_id)}" class="w-full text-left px-md py-sm flex flex-col gap-2xs transition-colors ${selected && selected.event_id === inc.event_id ? "bg-primary/10 border-l-2 border-primary" : "hover:bg-surface-container border-l-2 border-transparent"}">
+              <div class="flex items-center justify-between"><span class="font-mono text-data-sm text-on-surface">TRACK ${esc(tail(inc.track_id))}</span>${badgeHTML(inc.confidence_tier === "high" ? "bad" : "warn", inc.confidence_tier + " confidence")}</div>
+              <div class="grid grid-cols-3 gap-xs font-mono text-body-sm text-on-surface-variant"><span>Dwell ${fmt(dwell,1)}s</span><span>${esc(inc.camera_id)}</span><span>${inc.windows.length} window${inc.windows.length===1?"":"s"}</span></div>
+            </button>`;
+          }).join("") : `<div class="p-lg text-center text-body-sm text-on-surface-variant">No stopped-vehicle events in this dataset.</div>`}
+        </div>`)}
+      <div id="incident-inspector">${incidentInspectorHTML(selected, windows)}</div>
+    </div>
+  </div>`;
+  document.getElementById("incident-list").querySelectorAll("[data-inc]").forEach(b => b.addEventListener("click", () => {
+    selectedIncidentId = b.dataset.inc; renderSafetyEvents(root);
+  }));
+  const jump = document.getElementById("jump-to-video");
+  if (jump) jump.addEventListener("click", () => {
+    const t = Number(jump.dataset.t);
+    location.hash = "#video-replay";
+    setTimeout(() => { const v = document.getElementById("real-video"); if (v) v.currentTime = t; }, 60);
+  });
+}
+
+function incidentInspectorHTML(inc, windows) {
+  if (!inc) return panelHTML(`<div class="p-lg text-center text-body-sm text-on-surface-variant">Select an incident to inspect it.</div>`);
+  const found = findTrack(windows, inc.track_id);
+  const track = found ? found.track : null;
+  const canJump = state.mode === "real"; // only Real Video Replay has an actual <video> element to seek
+  const canChart = state.mode === "real" || state.mode === "showcase"; // both have per-frame boxes to trace; synthetic does not
+  let chart = "";
+  if (canChart) {
+    const frames = state.mode === "showcase" ? showcaseFrames() : ANVESH_DATA.real_video.frames;
+    const trace = centroidSpeedTrace(tail(inc.track_id), Math.max(0, inc.window[0] - 8), inc.window[1] + 8, frames);
+    if (trace.length > 2) {
+      chart = `<div class="mt-md"><div class="font-mono text-label-caps uppercase text-outline mb-xs">Centroid speed vs. time (image-space px/s)</div><div class="h-[90px]">${sparklineSVG(trace.map(p => p.v), { height: 90 })}</div><div class="flex justify-between font-mono text-label-caps text-outline mt-2xs"><span>${fmt(trace[0].t,1)}s</span><span>${fmt(trace[trace.length-1].t,1)}s</span></div></div>`;
+    }
+  }
+  return panelHTML(`
+    <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20"><span class="font-mono text-label-caps uppercase text-outline">Event inspection &middot; track ${esc(tail(inc.track_id))}</span>${canJump ? `<button id="jump-to-video" data-t="${inc.window[0]}" class="px-sm py-xs bg-primary text-on-primary rounded font-mono text-label-sm font-semibold flex items-center gap-xs" type="button"><span class="material-symbols-outlined text-[14px]">play_arrow</span>Jump to video at ${fmt(inc.window[0],1)}s</button>` : ""}</div>
+    <div class="p-md flex flex-col gap-sm">
+      <dl class="grid grid-cols-2 gap-x-md gap-y-xs font-mono text-body-sm">
+        <dt class="text-on-surface-variant">Camera</dt><dd>${esc(inc.camera_id)}</dd>
+        <dt class="text-on-surface-variant">Dwell window</dt><dd>${fmt(inc.window[0],2)}s &ndash; ${fmt(inc.window[1],2)}s (${fmt(inc.window[1]-inc.window[0],1)}s)</dd>
+        <dt class="text-on-surface-variant">Confidence tier</dt><dd>${inc.confidence_tier}</dd>
+        <dt class="text-on-surface-variant">Windows affected</dt><dd>${inc.windows.map(i => i + 1).join(", ")}</dd>
+        ${track ? `<dt class="text-on-surface-variant">Speed at flag</dt><dd>${track.speed_available === false || !track.speed_estimate ? "speed unavailable" : fmt(track.speed_estimate.value,2) + " " + (track.motion_space === "world" ? "m/s" : "px/s")}</dd>
+        <dt class="text-on-surface-variant">Vehicle class</dt><dd>${esc(track.vehicle_class)}</dd>` : ""}
+      </dl>
+      ${chart}
+      <div class="mt-xs pt-xs border-t border-outline-variant/10 font-mono text-label-caps text-outline">Informational only &mdash; not dispatch or enforcement automation.</div>
+    </div>`);
+}
+</script>
+<script id="anvesh-app-6">
+"use strict";
+
+/* =========================================================================
+ * View 6 -- Synthetic Scenario Walkthrough
+ * ========================================================================= */
+
+function stepTitle(win, i, windows) {
+  const level = win.corridor_state ? CONGESTION_LABEL[win.corridor_state.fused_congestion_level] : "Unavailable";
+  const prevLevel = i > 0 && windows[i - 1].corridor_state ? windows[i - 1].corridor_state.fused_congestion_level : null;
+  const curLevel = win.corridor_state ? win.corridor_state.fused_congestion_level : null;
+  const changed = prevLevel && curLevel && prevLevel !== curLevel;
+  return `Window ${i + 1} (${mmss(win.window[0])}&ndash;${mmss(win.window[1])}) &mdash; ${level}${changed ? " (transition)" : ""}`;
+}
+
+function stepCardHTML(win, i, windows, isLast) {
+  const cams = win.camera_ids;
+  const top = topTiedEntries(win);
+  const rows = cams.map(cid => {
+    const seg = win.corridor_state ? win.corridor_state.segment_states.find(s => s.camera_id === cid) : null;
+    if (!seg) return "";
+    return `<div class="flex items-center justify-between font-mono text-body-sm text-on-surface-variant"><span>${esc(cid)}</span><span>${seg.vehicle_count} veh &middot; ${speedOrDash(seg.mean_speed, seg.mean_speed_available, 1) === null ? "speed unavailable" : fmt(seg.mean_speed.value,1) + " " + (seg.motion_space === "world" ? "m/s" : "px/s")} &middot; occ ${fmt(seg.occupancy,2)}</span></div>`;
+  }).join("");
+  return panelHTML(`
+    <div class="flex items-center justify-between px-md py-sm border-b border-outline-variant/20">
+      <div class="flex items-center gap-sm"><span class="px-xs py-2xs bg-surface-container-high rounded font-mono text-label-caps text-outline">STEP ${String(i + 1).padStart(2, "0")}</span><span class="font-mono text-headline-sm text-on-surface">${stepTitle(win, i, windows)}</span></div>
+      ${win.corridor_state ? badgeHTML(CONGESTION_BADGE[win.corridor_state.fused_congestion_level], CONGESTION_LABEL[win.corridor_state.fused_congestion_level]) : badgeHTML("neutral", "unavailable")}
+    </div>
+    <div class="p-md flex flex-col gap-sm">
+      <div class="flex flex-wrap gap-sm">${win.candidate_ranking.ranked_list.filter(e => e.belief > 0).map(e => `
+        <div class="flex-1 min-w-[180px] bg-surface-container-low border ${top.includes(e) ? "border-primary/40" : "border-outline-variant/20"} rounded p-sm">
+          <div class="flex items-center justify-between"><span class="font-mono text-primary text-data-sm">${e.hypothesis_id}: ${esc(HYPOTHESES[e.hypothesis_id])}</span><span class="font-mono text-data-sm text-on-surface">Bel: ${fmt(e.belief,2)}</span></div>
+          <div class="w-full h-1.5 bg-surface-container-high rounded overflow-hidden mt-2xs"><div class="h-full bg-primary" style="width:${pct(e.belief)}"></div></div>
+        </div>`).join("") || `<div class="text-body-sm text-on-surface-variant">No hypothesis distinguishes itself.</div>`}</div>
+      ${rows ? `<div class="flex flex-col gap-2xs mt-xs">${rows}</div>` : ""}
+      ${isLast && win.propagation_prediction ? `
+        <div class="mt-xs pt-sm border-t border-outline-variant/10">
+          <div class="font-mono text-label-caps uppercase text-outline mb-xs">Propagation prediction (Rankine-Hugoniot kinematic wave)</div>
+          <dl class="grid grid-cols-2 gap-x-md gap-y-xs font-mono text-body-sm">
+            <dt class="text-on-surface-variant">Corridor</dt><dd>${esc(cams[0])} &rarr; ${esc(cams[1] || "?")} (${fmt(SEGMENT_LENGTH_M,1)} m)</dd>
+            <dt class="text-on-surface-variant">Shockwave speed</dt><dd>${fmt(Math.abs(win.propagation_prediction.predicted_shockwave_speed.value),1)} m/s (${win.propagation_prediction.predicted_shockwave_speed.value < 0 ? "upstream" : "downstream"})</dd>
+            <dt class="text-on-surface-variant">Predicted arrival</dt><dd>${esc(win.propagation_prediction.predicted_arrival_camera)} at t=${fmt(win.propagation_prediction.predicted_arrival_time,1)}s</dd>
+            <dt class="text-on-surface-variant">Queue growth</dt><dd>${fmt(win.propagation_prediction.predicted_queue_growth_rate,1)} veh/min</dd>
+          </dl>
+        </div>` : (isLast ? `<div class="mt-xs pt-sm border-t border-outline-variant/10 text-body-sm text-on-surface-variant">${esc(win.propagation_reason || "Propagation unavailable for this window.")}</div>` : "")}
+      ${isLast && win.feedback_result ? `
+        <div class="mt-xs pt-sm border-t border-outline-variant/10">
+          <div class="flex items-center justify-between mb-xs"><span class="font-mono text-label-caps uppercase text-outline">Closed-loop feedback</span>${badgeHTML(FEEDBACK_COLOR[win.feedback_result.outcome], win.feedback_result.outcome.replace(/_/g," "))}</div>
+          <div class="flex items-center gap-sm font-mono text-body-sm">
+            <div class="flex-1 bg-surface-container-low rounded p-sm border border-outline-variant/20"><div class="text-outline text-label-caps">Prior top</div><div class="text-on-surface">${win.feedback_result.prior_top.hypothesis_id} &middot; ${pct(win.feedback_result.prior_top.belief)}</div></div>
+            <span class="material-symbols-outlined text-outline">arrow_forward</span>
+            <div class="flex-1 bg-surface-container-low rounded p-sm border border-outline-variant/20"><div class="text-outline text-label-caps">Revised top</div><div class="text-on-surface">${win.feedback_result.revised_top.hypothesis_id} &middot; ${pct(win.feedback_result.revised_top.belief)}</div></div>
+          </div>
+          <p class="text-body-sm text-on-surface-variant mt-xs">${esc(win.feedback_result.reason)}</p>
+          ${win.feedback_result.discrepancy ? `<dl class="grid grid-cols-3 gap-x-md gap-y-xs font-mono text-body-sm mt-xs"><dt class="text-on-surface-variant">Location err</dt><dd>${fmt(win.feedback_result.discrepancy.location_error,1)} m</dd><dt class="text-on-surface-variant">Time err</dt><dd>${fmt(win.feedback_result.discrepancy.time_error,1)} s</dd><dt class="text-on-surface-variant">Rate err</dt><dd>${fmt(win.feedback_result.discrepancy.rate_error,1)} veh/min</dd></dl>` : ""}
+        </div>` : (isLast ? `<div class="mt-xs pt-sm border-t border-outline-variant/10 text-body-sm text-on-surface-variant">${esc(win.feedback_reason || "")}</div>` : "")}
+    </div>`);
+}
+
+function otherScenarioCardHTML(sc, active) {
+  const lastWin = sc.windows[sc.windows.length - 1];
+  const outcome = lastWin.feedback_result ? lastWin.feedback_result.outcome : lastWin.candidate_ranking.outcome;
+  const color = lastWin.feedback_result ? FEEDBACK_COLOR[outcome] : OUTCOME_COLOR[outcome];
+  return panelHTML(`
+    <div class="p-md flex flex-col gap-xs">
+      <div class="flex items-center justify-between">${badgeHTML(color, outcome.replace(/_/g, " "))}</div>
+      <div class="font-mono text-headline-sm text-on-surface">${esc(sc.title)}</div>
+      <p class="text-body-sm text-on-surface-variant">${esc(sc.description)}</p>
+      <button data-switch="${esc(sc.scenario_id)}" class="mt-xs w-full py-xs bg-surface-container-high hover:bg-surface-bright text-primary border border-outline-variant/40 rounded font-mono text-label-sm" type="button">View this scenario</button>
+    </div>`, "mt-md");
+}
+
+function renderSynthetic(root) {
+  const sc = currentScenario();
+  root.innerHTML = `
+  <div class="p-lg flex flex-col gap-md">
+    <div class="bg-tertiary/10 border border-tertiary/30 rounded-lg p-md flex items-start gap-sm">
+      <span class="material-symbols-outlined text-tertiary text-[20px]">science</span>
+      <div>
+        <div class="font-mono text-headline-sm text-tertiary uppercase tracking-wide">Synthetic demonstration mode &mdash; not real-world validation</div>
+        <p class="text-body-md text-on-surface-variant mt-2xs max-w-[900px]">Hand-authored WORLD-space vehicle trajectories fed directly into the real ANVESH engine (<code class="font-mono text-tertiary">anvesh.pipeline.run_corridor_window</code>) &mdash; every number below is what that engine actually returned for these fixtures, never authored for display.</p>
+      </div>
+    </div>
+    <div class="flex items-center bg-surface-container-low p-2xs rounded border border-outline-variant/30 overflow-x-auto" id="scenario-tabs">
+      ${synthScenarios().map((s, i) => `<button data-idx="${i}" class="flex-1 min-w-[220px] text-left px-md py-sm rounded font-mono text-label-sm transition-colors ${i === state.scenarioIndex ? "bg-surface-container-high text-primary" : "text-on-surface-variant hover:text-on-surface"}"><div class="text-label-caps text-outline">SCENARIO ${String(i+1).padStart(2,"0")}</div>${esc(s.title)} <span class="text-outline">(${s.windows.length} window${s.windows.length===1?"":"s"})</span></button>`).join("")}
+    </div>
+    <p class="text-body-md text-on-surface-variant">${esc(sc.description)}</p>
+    <div class="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-md items-start">
+      <div class="flex flex-col gap-md" id="steps-col">
+        ${sc.windows.map((w, i) => stepCardHTML(w, i, sc.windows, i === sc.windows.length - 1)).join("")}
+      </div>
+      <div class="flex flex-col" id="taxonomy-col">
+        <div class="font-mono text-label-caps uppercase text-outline mb-xs">Other synthetic scenarios</div>
+        ${synthScenarios().map((s, i) => i === state.scenarioIndex ? "" : otherScenarioCardHTML(s)).join("")}
+      </div>
+    </div>
+  </div>`;
+  document.getElementById("scenario-tabs").querySelectorAll("[data-idx]").forEach(b => b.addEventListener("click", () => {
+    location.hash = "#synthetic/" + SCENARIO_ROUTES[Number(b.dataset.idx)].path;
+  }));
+  root.querySelectorAll("[data-switch]").forEach(b => b.addEventListener("click", () => {
+    const idx = synthScenarios().findIndex(s => s.scenario_id === b.dataset.switch);
+    location.hash = "#synthetic/" + SCENARIO_ROUTES[idx].path;
+  }));
+}
+
+/* =========================================================================
+ * Dispatch + export + init
+ * ========================================================================= */
+
+function render() {
+  renderSidebar();
+  renderTopbar();
+  const root = document.getElementById("view-root");
+  // Every route reads currentWindows()/currentWindow(), which for mode
+  // "showcase" is empty until ensureShowcaseData() resolves (or fails) --
+  // guard ALL of them here rather than duplicating a loading/error check
+  // in Pipeline Diagnostics, Evidence Matrix, Cause Ranking, and Safety
+  // Events individually.
+  if (state.mode === "showcase" && showcaseLoadState !== "loaded") {
+    root.innerHTML = showcaseLoadingOrErrorHTML();
+    return;
+  }
+  switch (state.route) {
+    case "pipeline-diagnostics": renderPipelineDiagnostics(root); break;
+    case "evidence-matrix": renderEvidenceMatrix(root); break;
+    case "cause-ranking": renderCauseRanking(root); break;
+    case "safety-events": renderSafetyEvents(root); break;
+    case "synthetic": renderSynthetic(root); break;
+    default: renderVideoReplay(root);
+  }
+}
+
+document.getElementById("export-btn").addEventListener("click", () => {
+  if (state.route === "synthetic") { downloadJSON(currentScenario(), `anvesh_${currentScenario().scenario_id}.json`); return; }
+  if (state.mode === "synthetic") { downloadJSON(currentScenario(), `anvesh_${currentScenario().scenario_id}.json`); return; }
+  if (state.mode === "showcase") { downloadJSON(currentWindow(), `anvesh_s02_c006_showcase_window_${state.windowIndex + 1}.json`); return; }
+  downloadJSON(currentWindow(), `anvesh_real_video_window_${state.windowIndex + 1}.json`);
+});
+
+function boot() {
+  state.windowIndex = defaultWindowIndexFor(state.mode, state.scenarioIndex);
+  onRouteChange();
+}
+
+/* Dev-mode / external-source fallback: when this file is opened directly
+ * (not the built, fully-embedded artifact from scripts/build_ui_artifact.
+ * py's `build_dashboard_artifact`), the two placeholders above are still
+ * literal text, not real data, so both assignments in anvesh-app-6 threw
+ * and ANVESH_DATA is undefined here. Fetch external JSON + reference an
+ * external video file instead of embedding them, so this same template
+ * serves three uses without any markup fork:
+ *   1. Local dev preview of the frozen demo data (default paths below).
+ *   2. The LIVE presentation artifact (scripts/build_ui_artifact.py's
+ *      `build_live_dashboard_artifact`), which copies this template
+ *      unmodified except for injecting `window.ANVESH_LIVE_CONFIG` (see
+ *      that function) pointing at that run's own JSON/video files --
+ *      this is WHY the live artifact stays small (~90KB shell) instead of
+ *      re-embedding a 100MB+ base64 payload per run: the browser's native
+ *      fetch()/<video src> loading paths already stream/cache external
+ *      files far better than a giant inline JS string ever can.
+ *   3. Any other external-source override a caller sets before this
+ *      script tag runs.
+ * `window.ANVESH_LIVE_CONFIG` is optional in all three cases -- omitted,
+ * behavior is byte-for-byte the original hardcoded dev-preview fallback. */
+if (typeof ANVESH_DATA === "undefined") {
+  const cfg = (typeof window !== "undefined" && window.ANVESH_LIVE_CONFIG) || {};
+  const dataUrl = cfg.dataUrl || "data/anvesh_demo_data.json";
+  const videoUrl = cfg.videoUrl || "../demo.mp4";
+  fetch(dataUrl)
+    .then(r => r.json())
+    .then(data => { ANVESH_DATA = data; VIDEO_SRC = videoUrl; boot(); })
+    .catch(err => {
+      document.getElementById("view-root").innerHTML = `<div class="p-xl text-error font-mono">Dev preview: failed to fetch ${esc(dataUrl)} (serve this directory over HTTP, e.g. "python -m http.server"). ${esc(String(err))}</div>`;
+    });
+} else {
+  boot();
+}
+</script>
+
+</body>
+</html>

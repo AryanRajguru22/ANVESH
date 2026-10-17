@@ -2,6 +2,7 @@ import pytest
 
 from anvesh.evidence.reliability import ReliabilityScore, ReliabilityWeights, compute_reliability
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import Measurement, MotionSpace, OcclusionState, VehicleClass, VehicleTrack
 
 
@@ -15,7 +16,7 @@ def _track(track_id, first_seen, last_seen, occlusion_state=OcclusionState.VISIB
         occlusion_state=occlusion_state,
         position_history=[],
         speed_estimate=Measurement(value=5.0, error=0.0),
-        motion_space=motion_space,
+        motion_space=motion_space, geometry_validity=(GeometryValidity.WORLD_VALIDATED if motion_space == MotionSpace.WORLD else GeometryValidity.IMAGE),
     )
 
 

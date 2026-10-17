@@ -1,24 +1,61 @@
-"""Video ingestion (blueprint Part 3, module 1): read timestamped frames
-from a recorded video file per camera.
+"""Video ingestion (blueprint Part 3, module 1): read timestamped frames from
+a camera source -- a recorded file OR a live stream -- through ONE
+`FrameSource` interface (M-A: "replay = live").
+
+Both kinds of source feed the same streaming pipeline
+(`anvesh.streaming`); there is no batch-only and live-only perception path.
+This module holds the interface, the recorded-file source and the shared
+health record. The RTSP/live-style source lives in `anvesh.streaming.rtsp`.
 
 Uses OpenCV's VideoCapture with an explicit open-check -- a video that
 fails to open raises immediately instead of silently yielding zero frames
-(blueprint Part 3 module 1 note, fixing V0_AUDIT §13's silent-failure bug).
+(blueprint Part 3 module 1 note, fixing V0_AUDIT SS13's silent-failure bug).
 
-Frame timestamps are relative to the start of the recording
-(`frame_index / fps`, t=0 at the first frame) -- this is recorded/replayed
-video, not a live feed, so there is no wall-clock/UTC capture time to
-recover from the file itself.
+TIMING (see `anvesh.perception.types.Frame`): a file's frame timestamps are
+`frame_index / fps` (t=0 at the first frame). That is deterministic, which
+batch/stream parity relies on, but it also assumes a perfectly regular clock:
+CityFlow's README warns that some frames are skipped or stuck in transmission,
+so for such sources `index / fps` is only approximately the true capture
+time. A file source can be PACED (`realtime_factor=1.0` emits frame `i` no
+earlier than `i / fps` after the source started -- file-as-live-stream; `2.0`
+= twice real time; `None` = as fast as the consumer pulls, "accelerated").
+Pacing changes only WHEN a frame is emitted, never its `timestamp`.
 """
 
 from __future__ import annotations
 
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Protocol
 
 import cv2
 
 from anvesh.perception.types import Frame
+
+
+@dataclass(frozen=True)
+class SourceHealth:
+    """Point-in-time health of a frame source (any kind).
+
+    `state`: "idle" (not started) | "connected" | "reconnecting" | "ended"
+    (clean EOF) | "stopped" (closed by the owner) | "failed".
+    `frames_read`: frames successfully decoded and yielded.
+    `source_gap_frames`: frames the source itself knows/estimates it skipped
+    (inter-frame time far above nominal), NOT queue drops downstream.
+    `measured_fps`/`interval_jitter_s`: EMA of the source's own delivery rate
+    and the standard deviation of recent inter-frame intervals -- not to be
+    confused with the processing FPS of the pipeline consuming it.
+    """
+
+    state: str
+    epoch: int
+    frames_read: int
+    reconnects: int
+    source_gap_frames: int
+    measured_fps: float
+    interval_jitter_s: float
+    last_error: str = ""
 
 
 class FrameSource(Protocol):
@@ -28,14 +65,41 @@ class FrameSource(Protocol):
 
     def __iter__(self) -> Iterator[Frame]: ...
 
+    def health(self) -> SourceHealth: ...
+
+    def close(self) -> None: ...
+
 
 class VideoFileFrameSource:
-    """Reads timestamped frames from a recorded video file via OpenCV."""
+    """Reads timestamped frames from a recorded video file via OpenCV.
 
-    def __init__(self, video_path: str | Path) -> None:
+    `realtime_factor`: None = unpaced; otherwise the replay speed relative to
+    the file's own clock (1.0 = real time). `clock`/`sleep` are injectable so
+    pacing is testable without waiting.
+    """
+
+    def __init__(
+        self,
+        video_path: str | Path,
+        realtime_factor: float = None,
+        clock=time.perf_counter,
+        sleep=time.sleep,
+    ) -> None:
         self._video_path = Path(video_path)
         if not self._video_path.is_file():
             raise FileNotFoundError(f"Video file not found: {self._video_path}")
+        if realtime_factor is not None and realtime_factor <= 0:
+            raise ValueError(f"realtime_factor must be > 0 or None, got {realtime_factor}")
+        self._realtime_factor = realtime_factor
+        self._clock = clock
+        self._sleep = sleep
+        self._state = "idle"
+        self._frames_read = 0
+        self._stop = False
+
+    @property
+    def video_path(self) -> Path:
+        return self._video_path
 
     def fps(self) -> float:
         capture = cv2.VideoCapture(str(self._video_path))
@@ -45,6 +109,15 @@ class VideoFileFrameSource:
         finally:
             capture.release()
         return self._require_valid_fps(fps)
+
+    def health(self) -> SourceHealth:
+        return SourceHealth(
+            state=self._state, epoch=0, frames_read=self._frames_read, reconnects=0,
+            source_gap_frames=0, measured_fps=0.0, interval_jitter_s=0.0,
+        )
+
+    def close(self) -> None:
+        self._stop = True
 
     def _require_opened(self, capture: cv2.VideoCapture) -> None:
         if not capture.isOpened():
@@ -59,13 +132,31 @@ class VideoFileFrameSource:
         capture = cv2.VideoCapture(str(self._video_path))
         self._require_opened(capture)
         fps = self._require_valid_fps(capture.get(cv2.CAP_PROP_FPS))
+        self._state = "connected"
+        self._stop = False
+        start = self._clock()
         try:
             index = 0
-            while True:
+            while not self._stop:
+                t_read = self._clock()
                 ok, image = capture.read()
+                decode_s = self._clock() - t_read
                 if not ok:
+                    self._state = "ended"  # clean EOF
                     break
-                yield Frame(index=index, timestamp=index / fps, image=image)
+                timestamp = index / fps
+                if self._realtime_factor is not None:
+                    due = start + timestamp / self._realtime_factor
+                    wait = due - self._clock()
+                    if wait > 0:
+                        self._sleep(wait)
+                self._frames_read += 1
+                yield Frame(
+                    index=index, timestamp=timestamp, image=image,
+                    capture_wall_s=self._clock(), decode_s=decode_s,
+                )
                 index += 1
+            if self._stop:
+                self._state = "stopped"
         finally:
             capture.release()

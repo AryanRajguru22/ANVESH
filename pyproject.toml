@@ -4,14 +4,20 @@ version = "0.1.0"
 description = "ANVESH V1 -- corridor congestion-cause reasoning system"
 readme = "README.md"
 requires-python = ">=3.11"
+# Pinned to the versions the audit and M-A evaluation ran against (see
+# requirements-lock.txt for the full environment, incl. the CUDA torch wheels).
+# Not randomly upgraded: the audit found `ByteTrackYoloTracker.reset()`
+# already broken by an Ultralytics bump, and the tracker's lost-buffer
+# semantics (which identity lifecycle depends on) are version-specific.
 dependencies = [
-    "opencv-python>=4.8",
-    "ultralytics>=8.0",
-    "numpy>=1.24",
+    "opencv-python==5.0.0.93",
+    "ultralytics==8.4.132",
+    "numpy==2.4.6",
+    "lap==0.5.13",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest==9.1.1", "psutil==7.2.2"]
 
 [project.scripts]
 anvesh = "anvesh.main:main"

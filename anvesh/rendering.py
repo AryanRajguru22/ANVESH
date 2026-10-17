@@ -95,24 +95,32 @@ def format_speed_text(speed_estimate: VehicleSpeedEstimate) -> object:
     confidence is `UNAVAILABLE`, that is reported explicitly (`"speed
     —"`) rather than vanishing indistinguishably from "never
     attempted" (design requirement 7's "explicit unavailable state").
+    When confidence is `OUTLIER` (a mathematically `OK` speed that fails
+    `speed_estimation.MAX_PLAUSIBLE_SPEED_KMH`'s physical-plausibility
+    check -- e.g. a c006 ground-point measurement amplified by that
+    homography's unvalidated, oversized world-scale into a physically
+    impossible value), the raw number is likewise NEVER shown: silently
+    printing "~2084 km/h" would present a rejected value as an ordinary
+    observation, exactly what this module exists to prevent.
 
-    Rounds to the nearest whole km/h -- never `"34.28 km/h"` (requirement
-    7) -- and appends `"(approx.)"` only when `confidence ==
-    APPROXIMATE`, i.e. exactly when the underlying `CalibrationProfile`'s
-    metric claim is unvalidated (today: every CityFlow-sourced camera,
-    `perception.speed_estimation`'s own Commit 6 rule). A `VALIDATED`
-    speed is not tagged "(approx.)" -- that caveat exists specifically to
-    carry forward the CityFlow-unvalidated-homography warning, not as a
-    generic disclaimer.
+    M-A speed-safety: a km/h figure is rendered ONLY for a `VALIDATED`
+    (validated-metric, plausible) estimate, via `metric_speed_kmh`. An
+    `APPROXIMATE` estimate comes from an UNVALIDATED world transform (every
+    CityFlow-sourced camera): its number is in unknown world-frame units, so
+    it is rendered as `"speed unvalidated"`, never as km/h -- not even with an
+    "(approx.)" caveat, which would still be a km/h claim. Whole km/h only
+    (never `"34.28 km/h"`).
     """
     if speed_estimate is None:
         return None
     if speed_estimate.confidence == SpeedConfidence.UNAVAILABLE:
         return "speed —"
-    km_h = round(speed_estimate.measurement.value)
-    if speed_estimate.confidence == SpeedConfidence.APPROXIMATE:
-        return f"~{km_h} km/h (approx.)"
-    return f"~{km_h} km/h"
+    if speed_estimate.confidence == SpeedConfidence.OUTLIER:
+        return "UNRELIABLE — OUTLIER"
+    metric = speed_estimate.metric_speed_kmh
+    if metric is None:
+        return "speed unvalidated"
+    return f"~{round(metric.value)} km/h"
 
 
 def format_vehicle_label(

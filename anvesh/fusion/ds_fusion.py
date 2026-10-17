@@ -313,3 +313,36 @@ def single_camera_result(camera_id: str, evidence: tuple, window: tuple) -> Fusi
         per_camera_discounted_bpa={camera_id: bpa},
         method="single_camera_v1",
     )
+
+
+def single_camera_discounted_result(camera_id: str, evidence: tuple, window: tuple, reliability: float) -> FusionResult:
+    """The PRODUCTION single-camera path (M-A.1): the camera's own BPA, Shafer-
+    discounted by that camera's reliability score, with no combination (there is
+    nothing to combine with).
+
+    Why not just `single_camera_result`: that is blueprint Baseline A -- the raw,
+    undiscounted BPA, kept unchanged as an evaluation baseline. Fed straight to
+    ranking it makes a lone camera's "belief" equal its raw evidence score
+    regardless of how trustworthy the observations were (an H1 score of
+    `0.5 + 0.5*occupancy` read as belief 0.95 even on a 0.69-reliability window).
+    Discounting moves the untrusted share of that mass to ignorance, so the
+    belief/plausibility interval and tier reflect the camera's reliability.
+
+    WHAT THIS DOES AND DOES NOT ESTABLISH: it is a transformation of one
+    camera's heuristic evidence scores. It is not a calibrated probability, it
+    is not corroborated by any second observation, and a "ranked" outcome means
+    "among the hypotheses this window could test, this one is best supported by
+    the measured data" -- never that it is the cause."""
+    bpa = discount_by_reliability(evidence_items_to_bpa(evidence), reliability)
+    return FusionResult(
+        camera_ids=(camera_id,),
+        window=window,
+        final_bpa=bpa,
+        conflict_k=0.0,
+        total_conflict=False,
+        high_conflict=False,
+        lambda_shared_used=1.0,
+        shared_condition=False,
+        per_camera_discounted_bpa={camera_id: bpa},
+        method="single_camera_discounted_v1",
+    )

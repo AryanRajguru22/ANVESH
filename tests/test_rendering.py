@@ -21,6 +21,7 @@ from anvesh.rendering import (
     is_resolved_candidate,
     render_annotated_frame,
 )
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     CandidateOutcome,
@@ -30,7 +31,8 @@ from anvesh.storage.schemas import (
     VehicleClass,
     VehicleTrack,
 )
-from anvesh.world.calibration import from_cityflow_homography
+from anvesh.world.calibration import fit_planar_homography, from_cityflow_homography
+from tests.world.support import make_reference_points
 from anvesh.world.lane_geometry import LaneAssignmentResult, LaneAssignmentStatus, LaneRegion, assign_lane
 
 WINDOW = (0.0, 10.0)
@@ -74,14 +76,32 @@ def _box_edge_pixel(annotated, bbox):
 
 def test_normal_vehicle_label_has_id_lane_and_speed():
     lane_result = LaneAssignmentResult(status=LaneAssignmentStatus.ASSIGNED, lane_id="L1", candidate_lane_ids=("L1",))
+    # M-A contract change: a km/h figure is only ever rendered for a
+    # VALIDATED estimate (previously this fixture was APPROXIMATE and rendered
+    # "~34 km/h (approx.)", i.e. a km/h claim from unvalidated geometry).
     speed = VehicleSpeedEstimate(
-        track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.APPROXIMATE,
-        measurement=Measurement(value=34.28, error=1.0),
+        track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.VALIDATED,
+        measurement=Measurement(value=34.28, error=1.0), geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
     label = format_vehicle_label(
         "3363", "car", lane_text=format_lane_text(lane_result), speed_text=format_speed_text(speed)
     )
-    assert label == "ID 3363 | Car | L1 | ~34 km/h (approx.)"
+    assert label == "ID 3363 | Car | L1 | ~34 km/h"
+
+
+def test_unvalidated_speed_label_never_contains_a_kmh_number():
+    lane_result = LaneAssignmentResult(status=LaneAssignmentStatus.ASSIGNED, lane_id="L1", candidate_lane_ids=("L1",))
+    speed = VehicleSpeedEstimate(
+        track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.APPROXIMATE,
+        measurement=None, unvalidated_world_speed=Measurement(value=9.52, error=1.0),
+    )
+    text = format_speed_text(speed)
+    assert text == "speed unvalidated"
+    assert not any(ch.isdigit() for ch in text) and "km/h" not in text
+    assert (
+        format_vehicle_label("3363", "car", lane_text=format_lane_text(lane_result), speed_text=text)
+        == "ID 3363 | Car | L1 | speed unvalidated"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +260,21 @@ def test_speed_omitted_entirely_when_no_estimate_supplied_at_all():
     assert format_speed_text(None) is None
 
 
+def test_speed_outlier_is_shown_explicitly_never_as_a_number():
+    """c006 speed-validation pass: a physically implausible derived speed
+    (e.g. the observed '~2084 km/h') must render as an explicit
+    unreliable-outlier marker, never as a number -- the exact bug this
+    fix corrects."""
+    estimate = VehicleSpeedEstimate(
+        track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.OUTLIER,
+        measurement=Measurement(value=2084.0, error=50.0), geometry_validity=GeometryValidity.WORLD_VALIDATED,
+    )
+    text = format_speed_text(estimate)
+    assert text == "UNRELIABLE — OUTLIER"
+    assert "2084" not in text
+    assert "km/h" not in text
+
+
 # ---------------------------------------------------------------------------
 # i: approximate speed never gets excessive precision
 # ---------------------------------------------------------------------------
@@ -247,18 +282,18 @@ def test_speed_omitted_entirely_when_no_estimate_supplied_at_all():
 
 def test_speed_text_never_shows_excessive_decimal_precision():
     estimate = VehicleSpeedEstimate(
-        track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.APPROXIMATE,
-        measurement=Measurement(value=34.284719, error=2.1),
+        track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.VALIDATED,
+        measurement=Measurement(value=34.284719, error=2.1), geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
     text = format_speed_text(estimate)
-    assert text == "~34 km/h (approx.)"
+    assert text == "~34 km/h"
     assert "." not in text.split("km/h")[0]
 
 
 def test_validated_speed_has_no_approx_suffix():
     estimate = VehicleSpeedEstimate(
         track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.VALIDATED,
-        measurement=Measurement(value=50.0, error=0.5),
+        measurement=Measurement(value=50.0, error=0.5), geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
     assert format_speed_text(estimate) == "~50 km/h"
 
@@ -289,8 +324,8 @@ def test_only_configured_lane_regions_are_drawn():
 def test_lane_and_speed_labels_are_independent_of_candidate_status():
     lane_result = LaneAssignmentResult(status=LaneAssignmentStatus.ASSIGNED, lane_id="L1", candidate_lane_ids=("L1",))
     speed = VehicleSpeedEstimate(
-        track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.APPROXIMATE,
-        measurement=Measurement(value=35.0, error=1.0),
+        track_id=f"{CAMERA_ID}:1", camera_id=CAMERA_ID, status="ok", confidence=SpeedConfidence.VALIDATED,
+        measurement=Measurement(value=35.0, error=1.0), geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
     label_not_candidate = format_vehicle_label(
         "1", "car", lane_text=format_lane_text(lane_result), speed_text=format_speed_text(speed), is_candidate=False
@@ -298,8 +333,8 @@ def test_lane_and_speed_labels_are_independent_of_candidate_status():
     label_candidate = format_vehicle_label(
         "1", "car", lane_text=format_lane_text(lane_result), speed_text=format_speed_text(speed), is_candidate=True
     )
-    assert label_not_candidate == "ID 1 | Car | L1 | ~35 km/h (approx.)"
-    assert label_candidate == "ID 1 | Car | L1 | ~35 km/h (approx.) (Highest-ranked candidate)"
+    assert label_not_candidate == "ID 1 | Car | L1 | ~35 km/h"
+    assert label_candidate == "ID 1 | Car | L1 | ~35 km/h (Highest-ranked candidate)"
 
 
 def test_candidate_label_never_uses_culprit_or_confirmed_wording():
@@ -326,11 +361,12 @@ def test_end_to_end_stopped_vehicle_is_rendered_as_resolved_candidate():
     assert lane_result.status == LaneAssignmentStatus.ASSIGNED
     assert lane_result.lane_id == "L1"
 
-    # -- approximate speed: a stationary ground-point trajectory through an
-    # unvalidated (CityFlow-style) calibration --
-    calibration_profile = from_cityflow_homography(
-        "calib-cf", CAMERA_ID, np.array([[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 1.0]]), reprojection_error=5.0
-    )
+    # -- metric speed: a stationary ground-point trajectory through a
+    # VALIDATED survey calibration. (This fixture's schema track below is a
+    # WORLD, i.e. metric, track; a metric track must come from validated
+    # geometry -- it used to pair it with an unvalidated CityFlow profile,
+    # the very inconsistency the M-A speed-safety work removed.) --
+    calibration_profile = fit_planar_homography("calib-survey", CAMERA_ID, make_reference_points())
     track_state = TrackState(
         track_id=raw_track_id, vehicle_class=VehicleClass.CAR, first_seen=0.0, last_seen=0.4,
         occlusion_state=OcclusionState.VISIBLE,
@@ -338,14 +374,15 @@ def test_end_to_end_stopped_vehicle_is_rendered_as_resolved_candidate():
         ground_point_trajectory=[(*ground_point, t) for t in (0.0, 0.1, 0.2, 0.3, 0.4)],
     )
     speed_estimate = estimate_vehicle_speed(CAMERA_ID, track_state, calibration_profile)
-    assert speed_estimate.confidence == SpeedConfidence.APPROXIMATE
-    assert speed_estimate.measurement.value == pytest.approx(0.0, abs=1e-6)
+    assert speed_estimate.confidence == SpeedConfidence.VALIDATED
+    assert speed_estimate.metric_speed_kmh.value == pytest.approx(0.0, abs=1e-6)
 
     # -- evidence + ranking: one sustained-stopped vehicle should support H2 --
     schema_track = VehicleTrack(
         track_id=qualified_track_id, camera_id=CAMERA_ID, first_seen=0.0, last_seen=4.0,
         vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.VISIBLE, position_history=[],
         speed_estimate=Measurement(value=0.0, error=0.0), motion_space=MotionSpace.WORLD,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED,  # this test's profile is a synthetic survey fixture
     )
     aggregation = aggregate_traffic_state(CAMERA_ID, *WINDOW, [schema_track], MotionSpace.WORLD, CongestionStateTracker())
     evidence = build_evidence_for_camera(CAMERA_ID, WINDOW, CameraRole.DOWNSTREAM, aggregation, [schema_track], reliability=0.9)
@@ -385,4 +422,4 @@ def test_end_to_end_stopped_vehicle_is_rendered_as_resolved_candidate():
         speed_text=format_speed_text(speed_estimate),
         is_candidate=is_resolved_candidate(CAMERA_ID, raw_track_id, resolution),
     )
-    assert label == "ID 1 | Car | L1 | ~0 km/h (approx.) (Highest-ranked candidate)"
+    assert label == "ID 1 | Car | L1 | ~0 km/h (Highest-ranked candidate)"

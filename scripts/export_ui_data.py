@@ -48,12 +48,16 @@ from anvesh.evidence.evidence_builder import EvidenceThresholds
 from anvesh.pipeline import CameraWindowInput, run_corridor_window
 from anvesh.perception.lane_assignment import assign_detection_lane
 from anvesh.perception.pipeline import run_m1_pipeline
+from anvesh.perception.schema_conversion import motion_space_for
 from anvesh.perception.speed_estimation import estimate_vehicle_speed
 from anvesh.perception.tracking import ByteTrackYoloTracker
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.perception.visualize import VideoWriter
 from anvesh.perception.windowing import generate_windows, tracks_in_window
 from anvesh.rendering import format_lane_text, format_speed_text
+from anvesh.safety.stop_episodes import episode_views, stop_episodes_from_track_states
+from anvesh.streaming.store import build_window_tracks
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     DataCompleteness,
@@ -89,6 +93,12 @@ SYNTHETIC_EVIDENCE_THRESHOLDS = EvidenceThresholds(capacity_flow_veh_per_s=1.6)
 # ---------------------------------------------------------------------------
 
 
+def _speed_unit(motion_space) -> str:
+    """Explicit unit tag for every exported speed value: metres/second ONLY
+    for validated metric space; pixels/second otherwise."""
+    return "m/s" if motion_space == MotionSpace.WORLD else "px/s"
+
+
 def _measurement(m) -> dict:
     return {"value": m.value, "error": m.error}
 
@@ -101,7 +111,11 @@ def _track_summary(track: VehicleTrack) -> dict:
         "first_seen": track.first_seen,
         "last_seen": track.last_seen,
         "motion_space": track.motion_space.value,
-        "speed_estimate": _measurement(track.speed_estimate),
+        "geometry_validity": track.geometry_validity.value,
+        "speed_unit": _speed_unit(track.motion_space),
+        "speed_available": track.speed_available,
+        # A placeholder (speed_available=False) is NEVER exported as a number.
+        "speed_estimate": _measurement(track.speed_estimate) if track.speed_available else None,
         "observation_count": len(track.position_history),
     }
 
@@ -111,12 +125,14 @@ def _traffic_state(ts) -> dict:
         "camera_id": ts.camera_id,
         "window": [ts.window_start, ts.window_end],
         "occupancy": ts.occupancy,
-        "mean_speed": _measurement(ts.mean_speed),
+        "mean_speed": _measurement(ts.mean_speed) if ts.mean_speed_available else None,
+        "mean_speed_available": ts.mean_speed_available,
         "vehicle_count": ts.vehicle_count,
         "flow_rate": ts.flow_rate,
         "density": ts.density,
         "congestion_level": ts.congestion_level.value,
         "motion_space": ts.motion_space.value,
+        "speed_unit": _speed_unit(ts.motion_space),
     }
 
 
@@ -220,6 +236,19 @@ def _safety_event(e) -> dict:
         "track_id": e.track_id,
         "window": list(e.window),
         "confidence_tier": e.confidence_tier.value,
+        "motion_space": e.motion_space.value,
+    }
+
+
+def _stop_episode(view) -> dict:
+    """Lifecycle of one stop as seen from one window. `speed_basis` says what the
+    stopped threshold means: a pixel heuristic (image space) is NOT a real-world speed."""
+    ep = view.episode
+    return {
+        "episode_id": ep.episode_id, "track_id": ep.track_id, "phase": view.phase.value,
+        "start": ep.start, "confirmed_at": ep.confirmed_at, "last_low_speed": ep.last_low_speed,
+        "end": ep.end, "closed_reason": ep.closed_reason, "dwell_s": ep.dwell_s,
+        "motion_space": ep.motion_space.value, "speed_basis": ep.speed_basis, "speed_threshold": ep.speed_threshold,
     }
 
 
@@ -256,6 +285,7 @@ def _window_result(result, tracks_by_camera: dict) -> dict:
         "feedback_result": _feedback(result.feedback_result),
         "feedback_reason": result.feedback_reason,
         "safety_events": [_safety_event(e) for e in result.safety_events],
+        "stop_episodes": [_stop_episode(v) for v in result.stop_episodes],
         "limitations": list(result.limitations),
     }
 
@@ -265,12 +295,15 @@ def _window_result(result, tracks_by_camera: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
+# SYNTHETIC fixtures: `GeometryValidity.WORLD_VALIDATED` below is DECLARED by the
+# fixture author so the metric-space code path can be exercised. No calibration
+# was performed and nothing here is validated against a real camera.
 def _tracks(camera_id, count, speed, first_seen=0.0, last_seen=10.0, offset=0):
     return [
         VehicleTrack(
             track_id=f"{camera_id}:{offset + i}", camera_id=camera_id, first_seen=first_seen, last_seen=last_seen,
             vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.VISIBLE, position_history=[],
-            speed_estimate=Measurement(value=speed, error=0.0), motion_space=MotionSpace.WORLD,
+            speed_estimate=Measurement(value=speed, error=0.0), motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
         )
         for i in range(count)
     ]
@@ -281,7 +314,7 @@ def _partial_tracks(camera_id, count, speed, first_seen=0.0, last_seen=10.0):
         VehicleTrack(
             track_id=f"{camera_id}:{i}", camera_id=camera_id, first_seen=first_seen, last_seen=last_seen,
             vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.PARTIAL, position_history=[],
-            speed_estimate=Measurement(value=speed, error=0.0), motion_space=MotionSpace.WORLD,
+            speed_estimate=Measurement(value=speed, error=0.0), motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
         )
         for i in range(count)
     ]
@@ -297,7 +330,7 @@ def _stopped_track(camera_id, suffix="stopped"):
         track_id=f"{camera_id}:{suffix}", camera_id=camera_id, first_seen=positions[0][2], last_seen=positions[-1][2],
         vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.VISIBLE,
         position_history=[WorldPosition(world_x=x, world_y=y, timestamp=t) for (x, y, t) in positions],
-        speed_estimate=Measurement(value=0.1, error=0.02), motion_space=MotionSpace.WORLD,
+        speed_estimate=Measurement(value=0.1, error=0.02), motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 
@@ -482,6 +515,7 @@ def _box_entry(td, lane_result=None, speed_estimate=None) -> dict:
         entry["speed"] = format_speed_text(speed_estimate)
         entry["speed_status"] = speed_estimate.status.value
         entry["speed_confidence"] = speed_estimate.confidence.value
+        entry["speed_geometry"] = speed_estimate.geometry_validity.value  # image / world_unvalidated / world_validated
     return entry
 
 
@@ -699,15 +733,16 @@ def real_video_limited_chain(
             shutil.rmtree(trimmed_tmp_dir, ignore_errors=True)
     _p(f"Stage 1/2 complete: {len(m1_result.vehicle_tracks)} tracks from {m1_result.frame_count} frames.")
 
-    # Per-track approximate speed -- ONE estimate_vehicle_speed call per
-    # finished track (never per frame, never per box: see
-    # perception.speed_estimation's own module docstring for why this is
-    # a whole-trajectory, compute-once quantity), keyed by the tracker's
-    # raw track_id (matching TrackedDetection.track_id, NOT the
-    # camera-qualified id VehicleSpeedEstimate.track_id carries). Only
-    # attempted when a calibration_profile was actually supplied --
-    # otherwise this dict stays empty and every box's speed keys stay
-    # absent, exactly today's behavior for every camera without one.
+    # Per-track speed estimate -- ONE estimate_vehicle_speed call per finished
+    # track (never per frame, never per box: see perception.speed_estimation's
+    # own module docstring for why this is a whole-trajectory, compute-once
+    # quantity), keyed by the TrackManager-assigned session-scoped identity
+    # (`TrackState.track_id`, which is also what `on_frame_tracked` /
+    # `TrackedDetection.track_id` carry after the M-A identity fix -- NOT a
+    # raw tracker ID, which can repeat). Only attempted when a
+    # calibration_profile was actually supplied -- otherwise this dict stays
+    # empty and every box's speed keys stay absent. For an UNVALIDATED
+    # profile (CityFlow) the estimate carries no km/h value at all.
     speed_by_track_id = {}
     if calibration_profile is not None:
         for state in m1_result.track_states:
@@ -739,26 +774,34 @@ def real_video_limited_chain(
     windows = generate_windows(effective_sample_seconds, WINDOW_SECONDS)
     congestion_tracker = CongestionStateTracker()
 
-    # WORLD only when this camera is actually calibrated -- mirrors
-    # `schema_conversion.build_vehicle_track`'s own existing motion-space
-    # branch (§1 of the Commit 9 integration audit), not new logic. A
-    # camera with no calibration_profile (every camera before this
-    # commit) keeps exactly today's IMAGE-space aggregation.
-    motion_space = (
-        MotionSpace.WORLD if calibration_profile is not None and calibration_profile.is_calibrated
-        else MotionSpace.IMAGE
-    )
+    # WORLD (metres) ONLY for validated metric geometry -- the SAME decision
+    # `schema_conversion.build_vehicle_track` made for every track, taken from
+    # the one shared helper, never from `is_calibrated`. (This line used to
+    # read `is_calibrated`, which is how an unvalidated CityFlow homography's
+    # unit-less values were labelled m/s and drove H1 to "high" on c006 --
+    # ANVESH_PRODUCT_GAP_AUDIT.md finding 2.) `aggregate_traffic_state`
+    # additionally refuses a space that disagrees with the tracks.
+    motion_space = motion_space_for(calibration_profile)
+
+    # Stop episodes follow a continuous low-speed run ACROSS window boundaries (a window-clipped
+    # track can miss a stop that straddles one) -- the same tracker the live engine uses.
+    stop_episodes = stop_episodes_from_track_states(camera_id, m1_result.track_states, calibration_profile)
 
     windows_out = []
     for window_obj in windows:
         window = (window_obj.start, window_obj.end)
-        window_tracks = tracks_in_window(m1_result.vehicle_tracks, window_obj)
+        # Window-CLIPPED tracks (samples inside [start, end) only) from the same
+        # builder the streaming engine uses, so a recorded file's windows mean
+        # exactly what a live stream's do -- not lifetime-averaged whole tracks.
+        window_tracks = build_window_tracks(
+            m1_result.track_states, window[0], window[1], camera_id, calibration_profile
+        )
         aggregation = aggregate_traffic_state(
             camera_id, window[0], window[1], window_tracks, motion_space, congestion_tracker,
             max_capacity_vehicles=max_capacity_vehicles,
         )
         camera_input = CameraWindowInput(camera_id=camera_id, role=CameraRole.UPSTREAM, aggregation=aggregation, tracks=window_tracks)
-        result = run_corridor_window(window, (camera_input,))
+        result = run_corridor_window(window, (camera_input,), stop_episodes=episode_views(stop_episodes, *window))
         windows_out.append(_window_result(result, {camera_id: window_tracks}))
         top = result.candidate_ranking.ranked_list[0] if result.candidate_ranking.ranked_list else None
         top_str = f"{top.hypothesis_id}({top.belief:.2f})" if top and top.belief > 0 else "none"

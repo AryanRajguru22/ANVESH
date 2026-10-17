@@ -123,6 +123,7 @@ def test_vehicle_track_valid_instance():
         position_history=[WorldPosition(world_x=1.0, world_y=2.0, timestamp=10.0)],
         speed_estimate=Measurement(value=8.3, error=0.4),
         motion_space="world",
+        geometry_validity="world_validated",
     )
     assert track.vehicle_class is VehicleClass.CAR
     assert track.occlusion_state is OcclusionState.VISIBLE

@@ -36,6 +36,7 @@ from anvesh.perception.pipeline import run_m1_pipeline
 from anvesh.perception.tracking import ByteTrackYoloTracker
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.perception.windowing import generate_windows, tracks_in_window, video_duration_from_tracks
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     DataCompleteness,
@@ -69,7 +70,7 @@ def _synthetic_tracks(camera_id, count, speed, first_seen=0.0, last_seen=10.0):
         VehicleTrack(
             track_id=f"{camera_id}:{i}", camera_id=camera_id, first_seen=first_seen, last_seen=last_seen,
             vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.VISIBLE, position_history=[],
-            speed_estimate=Measurement(value=speed, error=0.0), motion_space=MotionSpace.WORLD,
+            speed_estimate=Measurement(value=speed, error=0.0), motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
         )
         for i in range(count)
     ]
@@ -85,7 +86,7 @@ def _synthetic_stopped_track(camera_id):
         vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.VISIBLE,
         position_history=[WorldPosition(world_x=x, world_y=y, timestamp=t) for (x, y, t) in positions],
         speed_estimate=Measurement(value=99.0, error=0.0),  # deliberately unused
-        motion_space=MotionSpace.WORLD,
+        motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

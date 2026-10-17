@@ -7,6 +7,7 @@ from anvesh.evidence.evidence_builder import (
     build_evidence_for_camera,
 )
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     Evidence,
@@ -37,7 +38,7 @@ def _track(track_id, first_seen, last_seen, speed_value, motion_space=MotionSpac
         occlusion_state=OcclusionState.VISIBLE,
         position_history=[],
         speed_estimate=Measurement(value=speed_value, error=0.0),
-        motion_space=motion_space,
+        motion_space=motion_space, geometry_validity=(GeometryValidity.WORLD_VALIDATED if motion_space == MotionSpace.WORLD else GeometryValidity.IMAGE),
     )
 
 
@@ -138,10 +139,14 @@ def test_image_space_camera_cannot_detect_stopped_vehicles():
     assert items["H2"].direction == EvidenceDirection.INSUFFICIENT
 
 
-def test_image_space_h1_is_only_partial_completeness():
+def test_image_space_h1_is_unavailable_because_no_obstruction_search_was_possible():
+    """M-A.1 contract change (was: PARTIAL). H1 = "congestion with NO obstruction"; an
+    image-space camera cannot look for obstructions, so H1 asserts nothing there."""
     tracks = [_track(str(i), 0.0, 10.0, speed_value=50.0, motion_space=MotionSpace.IMAGE) for i in range(15)]
     items = _by_id(_build(tracks, motion_space=MotionSpace.IMAGE))
-    assert items["H1"].evidence.evidence_completeness == EvidenceCompleteness.PARTIAL
+    assert items["H1"].evidence.evidence_completeness == EvidenceCompleteness.NONE
+    assert items["H1"].direction == EvidenceDirection.INSUFFICIENT
+    assert items["H1"].evidence.signature_match_score == 0.0
 
 
 def test_evidence_carries_provenance():

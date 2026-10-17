@@ -26,6 +26,7 @@ sys.path.insert(0, str(REPO_ROOT))  # allow running without `pip install -e .`
 from anvesh.evidence.reliability import compute_reliability
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.storage.db import CorridorStateStore
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import Measurement, MotionSpace, OcclusionState, VehicleClass, VehicleTrack
 from anvesh.world.corridor_state import assemble_corridor_state
 from anvesh.world.synthetic_fixture import build_corridor_topology
@@ -44,7 +45,7 @@ def _track(track_id, camera_id, window_start, window_end, speed_value):
         occlusion_state=OcclusionState.VISIBLE,
         position_history=[],
         speed_estimate=Measurement(value=speed_value, error=0.0),
-        motion_space=MotionSpace.WORLD,
+        motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

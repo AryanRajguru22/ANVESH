@@ -1,0 +1,67 @@
+# ANVESH environment lock (M-A).
+# Generated from the working .venv (CPython 3.11.9, Windows win_amd64, NVIDIA
+# GPU with CUDA 13.0 torch wheels) with `pip freeze`.
+#
+# SCOPE: this is a record of the one environment the M-A evaluation ran in. It
+# is NOT claimed to be portable to other OSes, Python versions, or CPU-only /
+# other-CUDA machines; on those, treat the pins as a reference, not a recipe.
+#
+# `pip install -r requirements-lock.txt` ALONE WILL FAIL: torch / torchvision
+# are CUDA 13.0 builds (`+cu130`) that are not on PyPI's default index. Install
+# them first, from the PyTorch wheel index (or the equivalent local wheel files),
+# then the rest:
+#   pip install torch==2.13.0+cu130 torchvision==0.28.0+cu130 --index-url https://download.pytorch.org/whl/cu130
+#   pip install -r requirements-lock.txt   # torch/torchvision are then already satisfied
+#   pip install -e .
+# The index URL above was not re-fetched when this file was written. The sha256
+# of the exact wheels used is recorded so the binaries can be checked:
+#   torch-2.13.0+cu130-cp311-win_amd64.whl        sha256=45e97bd9bc0416f4f4190b5098c55119a389fa5a7c8bbf2639f08f1d04e0a0dc
+#   torchvision-0.28.0+cu130-cp311-win_amd64.whl  sha256=0c6921bb5e3e58d926f80ff894739c8b9b0e72fed59a062e19c934f13dfd53ea
+#
+# NOTE: Ultralytics is AGPL-3.0 -- licensing for any deployment is a separate,
+# open decision (ANVESH_PRODUCT_GAP_AUDIT.md SS17/SS21).
+anyio==4.14.2
+certifi==2026.7.22
+charset-normalizer==3.5.1
+colorama==0.4.6
+contourpy==1.3.3
+cycler==0.12.1
+filelock==3.32.4
+fonttools==4.63.0
+fsspec==2026.7.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.19
+iniconfig==2.3.0
+Jinja2==3.1.6
+kiwisolver==1.5.1
+lap==0.5.13
+MarkupSafe==3.0.3
+matplotlib==3.11.1
+mpmath==1.3.0
+networkx==3.6.1
+numpy==2.4.6
+nvidia-ml-py==13.610.43
+opencv-python==5.0.0.93
+packaging==26.3
+pillow==12.3.0
+pluggy==1.6.0
+polars==1.44.1
+polars-runtime-32==1.44.1
+psutil==7.2.2
+Pygments==2.21.0
+pyparsing==3.3.2
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+requests==2.34.2
+six==1.17.0
+sympy==1.14.0
+torch==2.13.0+cu130
+torchvision==0.28.0+cu130
+typing_extensions==4.16.0
+ultralytics==8.4.132
+ultralytics-platform==0.1.19
+ultralytics-thop==2.1.6
+urllib3==2.7.0

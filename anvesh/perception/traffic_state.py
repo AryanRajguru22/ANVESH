@@ -142,6 +142,13 @@ class CongestionStateTracker:
     def state(self) -> CongestionLevel:
         return self._state
 
+    def reset(self) -> None:
+        """Forget all hysteresis memory (back to the start-up state). Used when the
+        camera was UNAVAILABLE for a window: the previous level says nothing about
+        what the road looked like after the outage, so the next observed window is
+        classified as if it were the first one."""
+        self._state = CongestionLevel.FREE_FLOW
+
     def update(self, mean_speed_value: float, occupancy: float, motion_space: MotionSpace) -> CongestionLevel:
         raw = _raw_pressure(mean_speed_value, occupancy, motion_space, self._thresholds)
         return self._advance(raw)
@@ -231,6 +238,17 @@ def aggregate_traffic_state(
     if window_end < window_start:
         raise ValueError("window_end must be >= window_start")
 
+    # Speed-safety (M-A): the caller-declared `motion_space` must be the one
+    # the tracks actually carry. A WORLD (m/s) label cannot be put on a state
+    # computed from image-space or unvalidated-geometry tracks, and image
+    # tracks cannot be silently averaged with metric ones.
+    mismatched = sorted({t.motion_space.value for t in tracks if t.motion_space != motion_space})
+    if mismatched:
+        raise ValueError(
+            f"aggregate_traffic_state(motion_space={motion_space.value!r}) received tracks in "
+            f"{mismatched}: a window must be built from tracks of exactly one motion space"
+        )
+
     overlapping = _tracks_overlapping_window(tracks, window_start, window_end)
     window_duration = window_end - window_start
     vehicle_count = len(overlapping)
@@ -248,11 +266,19 @@ def aggregate_traffic_state(
         density = 0.0
         density_quality = DataQuality.OBSERVED
     else:
-        speeds = [t.speed_estimate.value for t in overlapping]
-        mean_speed_value = statistics.fmean(speeds)
-        speed_error = statistics.pstdev(speeds) if len(speeds) > 1 else overlapping[0].speed_estimate.error
-        mean_speed = Measurement(value=mean_speed_value, error=speed_error)
-        speed_quality = DataQuality.OBSERVED
+        # `speed_available=False` tracks (a validated-geometry track with too
+        # few samples / an implausible speed) have only a placeholder value:
+        # they never enter a mean, and a window with none has NO speed.
+        measured = [t for t in overlapping if t.speed_available]
+        if measured:
+            speeds = [t.speed_estimate.value for t in measured]
+            mean_speed_value = statistics.fmean(speeds)
+            speed_error = statistics.pstdev(speeds) if len(speeds) > 1 else measured[0].speed_estimate.error
+            mean_speed = Measurement(value=mean_speed_value, error=speed_error)
+            speed_quality = DataQuality.OBSERVED
+        else:
+            mean_speed = Measurement(value=0.0, error=0.0)
+            speed_quality = DataQuality.UNAVAILABLE
 
         occupancy = min(1.0, mean_concurrency / max_capacity_vehicles)
         occupancy_quality = DataQuality.ESTIMATED  # a capacity-based proxy, not a measured occupied-length fraction
@@ -267,7 +293,11 @@ def aggregate_traffic_state(
     if vehicle_count == 0:
         congestion_level = congestion_tracker.update_empty()
     else:
-        congestion_level = congestion_tracker.update(mean_speed.value, occupancy, motion_space)
+        # With no usable speed measurement the classification falls back to
+        # the occupancy-only rule (the same one image-space cameras use)
+        # instead of thresholding a placeholder 0.
+        pressure_space = motion_space if speed_quality == DataQuality.OBSERVED else MotionSpace.IMAGE
+        congestion_level = congestion_tracker.update(mean_speed.value, occupancy, pressure_space)
 
     traffic_state = TrafficState(
         camera_id=camera_id,
@@ -280,6 +310,8 @@ def aggregate_traffic_state(
         density=density,
         congestion_level=congestion_level,
         motion_space=motion_space,
+        # A 0.0 `mean_speed` with no measured vehicle is a placeholder, not a speed.
+        mean_speed_available=(speed_quality == DataQuality.OBSERVED),
     )
 
     return TrafficStateAggregation(

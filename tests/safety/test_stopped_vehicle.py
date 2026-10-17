@@ -7,6 +7,7 @@ from anvesh.safety.stopped_vehicle import (
     build_safety_event,
     classify_stopped_vehicle,
 )
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     ConfidenceTier,
     Measurement,
@@ -46,7 +47,7 @@ def _world_track(positions, occlusion_state=OcclusionState.VISIBLE, track_id="ca
         occlusion_state=occlusion_state,
         position_history=[WorldPosition(world_x=x, world_y=y, timestamp=t) for (x, y, t) in positions],
         speed_estimate=Measurement(value=12345.0, error=0.0),
-        motion_space=MotionSpace.WORLD,
+        motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

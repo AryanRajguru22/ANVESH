@@ -12,6 +12,7 @@ from anvesh.fusion.ds_fusion import fuse_two_cameras
 from anvesh.hypotheses.ranking import attach_ranking_to_corridor_state, build_ranking
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.storage.db import CorridorStateStore, RankingStore
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     CandidateOutcome,
@@ -37,7 +38,7 @@ def _track(track_id, camera_id, first_seen, last_seen, speed_value):
         occlusion_state=OcclusionState.VISIBLE,
         position_history=[],
         speed_estimate=Measurement(value=speed_value, error=0.0),
-        motion_space=MotionSpace.WORLD,
+        motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

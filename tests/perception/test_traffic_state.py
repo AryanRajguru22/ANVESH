@@ -8,6 +8,7 @@ from anvesh.perception.traffic_state import (
     DataQuality,
     aggregate_traffic_state,
 )
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CongestionLevel,
     Measurement,
@@ -37,7 +38,7 @@ def _track(
         occlusion_state=occlusion_state,
         position_history=[],
         speed_estimate=Measurement(value=speed_value, error=speed_error),
-        motion_space=motion_space,
+        motion_space=motion_space, geometry_validity=(GeometryValidity.WORLD_VALIDATED if motion_space == MotionSpace.WORLD else GeometryValidity.IMAGE),
     )
 
 
@@ -178,7 +179,7 @@ def test_density_is_a_labeled_proxy_without_segment_length():
 
 
 def test_density_is_a_proxy_when_uncalibrated_even_with_segment_length():
-    tracks = [_track(str(i), 0.0, 5.0, speed_value=10.0) for i in range(4)]
+    tracks = [_track(str(i), 0.0, 5.0, speed_value=10.0, motion_space=MotionSpace.IMAGE) for i in range(4)]
     result = aggregate_traffic_state(
         "cam-A", 0.0, 10.0, tracks, MotionSpace.IMAGE, _tracker(), segment_length_m=20.0
     )

@@ -8,6 +8,7 @@ from pathlib import Path
 from anvesh.evidence.reliability import compute_reliability
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.storage.db import CorridorStateStore
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import CameraRole, CongestionLevel, Measurement, MotionSpace, OcclusionState, VehicleClass, VehicleTrack
 from anvesh.world.corridor import CameraPlacement, CorridorTopology
 from anvesh.world.corridor_state import assemble_corridor_state
@@ -23,7 +24,7 @@ def _track(track_id, camera_id, first_seen, last_seen, speed_value):
         occlusion_state=OcclusionState.VISIBLE,
         position_history=[],
         speed_estimate=Measurement(value=speed_value, error=0.0),
-        motion_space=MotionSpace.WORLD,
+        motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

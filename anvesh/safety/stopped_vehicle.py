@@ -1,5 +1,11 @@
 """Persistent stopped-vehicle detection (M7, blueprint-external).
 
+M-A.1 NOTE: this classifier judges ONE `VehicleTrack` as given. Applied to a
+window-CLIPPED track it can miss a stop that straddles a window boundary (each half
+shorter than the dwell threshold). Streaming/recorded-window consumers therefore use
+`safety.stop_episodes`, which follows the run across windows and gives a stop a stable
+identity; this per-track classifier remains the right tool for a WHOLE-lifetime track.
+
 Scope: this module detects that ONE camera's `VehicleTrack` shows a
 sustained, low-motion dwell segment. It is deliberately NOT:
   - accident/collision detection

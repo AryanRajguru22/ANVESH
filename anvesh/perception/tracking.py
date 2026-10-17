@@ -70,7 +70,14 @@ def parse_tracked_results(result, frame_index: int, timestamp: float) -> tuple:
 
 class ByteTrackYoloTracker:
     """Ultralytics YOLO + built-in ByteTrack, run frame-by-frame with
-    persisted tracker state (`persist=True`)."""
+    persisted tracker state (`persist=True`).
+
+    The IDs this returns are RAW tracker IDs: per-run integers from a
+    class-global counter (`ultralytics STrack._count`) that restart after any
+    reset and that ByteTrack may re-emit for a track it had lost. They are
+    never a vehicle identity -- `track_manager.TrackManager` maps them to
+    session-scoped identities (see its module docstring).
+    """
 
     def __init__(
         self,
@@ -85,17 +92,33 @@ class ByteTrackYoloTracker:
         self._confidence_threshold = confidence_threshold
         self._tracker_config = tracker_config
         self._classes = sorted(COCO_TO_VEHICLE_CLASS)
+        self._lost_buffer_frames = _read_lost_buffer_frames(tracker_config)
 
     @property
     def model_id(self) -> str:
         return self._model_name
 
+    @property
+    def lost_buffer_frames(self) -> int:
+        """Frames ByteTrack keeps a lost track alive (and may re-emit its ID).
+        `TrackManager`'s occlusion horizon must be at least this long at the
+        source fps (`track_manager.occlusion_horizon_s`)."""
+        return self._lost_buffer_frames
+
     def reset(self) -> None:
-        """Drop persisted tracker state so the next `update()` starts a
-        fresh track-ID sequence (documented Ultralytics reset pattern)."""
-        predictor = getattr(self._model, "predictor", None)
-        if predictor is not None:
-            predictor.trackers = None
+        """Start a fresh tracker run: no persisted tracks, a new raw-ID
+        sequence.
+
+        The previous implementation set `predictor.trackers = None`, which
+        crashed the next `update()` on current Ultralytics
+        (`TypeError: 'NoneType' object is not subscriptable`: the library
+        indexes `predictor.trackers[0]` when `persist=True`). Dropping the
+        whole model object is version-independent: the next `track()` call
+        builds a new predictor and new tracker instances from scratch.
+        """
+        from ultralytics import YOLO
+
+        self._model = YOLO(self._model_name)
 
     def update(self, image, frame_index: int, timestamp: float) -> tuple:
         results = self._model.track(
@@ -107,3 +130,15 @@ class ByteTrackYoloTracker:
             verbose=False,
         )
         return parse_tracked_results(results[0], frame_index, timestamp)
+
+
+def _read_lost_buffer_frames(tracker_config: str, default: int = 30) -> int:
+    """`track_buffer` from the tracker YAML; falls back to Ultralytics'
+    documented default (30) if the file cannot be read."""
+    try:
+        from ultralytics.utils import YAML
+        from ultralytics.utils.checks import check_yaml
+
+        return int(YAML.load(check_yaml(tracker_config))["track_buffer"])
+    except Exception:  # noqa: BLE001 - config discovery must not break tracking
+        return default

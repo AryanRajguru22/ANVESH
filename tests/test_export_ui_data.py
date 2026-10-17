@@ -122,7 +122,7 @@ def test_box_entry_includes_lane_fields_when_lane_result_supplied():
 
 
 def test_box_entry_includes_speed_fields_when_speed_estimate_supplied():
-    from anvesh.storage.schemas import Measurement, VehicleClass
+    from anvesh.storage.schemas import GeometryValidity, Measurement, VehicleClass
     from anvesh.perception.motion import RobustSpeedStatus
     from anvesh.perception.speed_estimation import SpeedConfidence, VehicleSpeedEstimate
 
@@ -130,15 +130,28 @@ def test_box_entry_includes_speed_fields_when_speed_estimate_supplied():
         track_id="42",
         detection=_FakeDetection(bbox_xyxy=(1.0, 2.0, 3.0, 4.0), vehicle_class=VehicleClass.CAR, confidence=0.87),
     )
+    # M-A contract change: an APPROXIMATE (unvalidated-geometry) speed has NO
+    # km/h value, so the export must not print one.
     speed_estimate = VehicleSpeedEstimate(
         track_id="cam:42", camera_id="cam", status=RobustSpeedStatus.OK,
-        confidence=SpeedConfidence.APPROXIMATE, measurement=Measurement(value=34.0, error=1.0),
+        confidence=SpeedConfidence.APPROXIMATE, measurement=None,
+        unvalidated_world_speed=Measurement(value=9.4, error=0.3),
     )
     entry = export_ui_data._box_entry(td, speed_estimate=speed_estimate)
-    assert entry["speed"] == "~34 km/h (approx.)"
+    assert entry["speed"] == "speed unvalidated"
+    assert "km/h" not in entry["speed"]
     assert entry["speed_status"] == "ok"
     assert entry["speed_confidence"] == "approximate"
+    assert entry["speed_geometry"] == "world_unvalidated"
     assert "lane" not in entry  # lane_result still omitted -> still absent
+
+    validated = VehicleSpeedEstimate(
+        track_id="cam:42", camera_id="cam", status=RobustSpeedStatus.OK,
+        confidence=SpeedConfidence.VALIDATED, measurement=Measurement(value=34.0, error=1.0), geometry_validity=GeometryValidity.WORLD_VALIDATED,
+    )
+    entry = export_ui_data._box_entry(td, speed_estimate=validated)
+    assert entry["speed"] == "~34 km/h"
+    assert entry["speed_geometry"] == "world_validated"
 
 
 def test_window_result_includes_candidate_vehicle_and_round_trips_json():
@@ -166,6 +179,7 @@ def test_window_result_includes_candidate_vehicle_and_round_trips_json():
         feedback_reason = "no propagation prediction available"
         safety_events = ()
         limitations = ()
+        stop_episodes = ()  # M-A.1 field of AnveshWindowResult
 
     # _ranking(None) would crash, so patch it out -- this test targets
     # candidate_vehicle serialization only, not the whole result shape.
@@ -207,9 +221,10 @@ def _fake_run_m1_pipeline_factory(ground_point_trajectory):
     contract) so `real_video_limited_chain`'s capture/attach logic runs
     unmodified."""
     from anvesh.perception.pipeline import M1PipelineResult
+    from anvesh.perception.schema_conversion import build_vehicle_track
     from anvesh.perception.track_manager import TrackState
     from anvesh.perception.types import RawDetection, TrackedDetection
-    from anvesh.storage.schemas import Measurement, MotionSpace, OcclusionState, VehicleClass, VehicleTrack
+    from anvesh.storage.schemas import OcclusionState, VehicleClass
 
     def fake_run_m1_pipeline(
         video_path, camera_id, tracker, model_id, model_version,
@@ -226,19 +241,17 @@ def _fake_run_m1_pipeline_factory(ground_point_trajectory):
 
         result = M1PipelineResult()
         result.frame_count = 1
-        result.vehicle_tracks = [
-            VehicleTrack(
-                track_id=f"{camera_id}:1", camera_id=camera_id, first_seen=0.0, last_seen=0.4,
-                vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.VISIBLE, position_history=[],
-                speed_estimate=Measurement(value=0.0, error=0.0), motion_space=MotionSpace.IMAGE,
-            )
-        ]
-        result.track_states = [
-            TrackState(
-                track_id="1", vehicle_class=VehicleClass.CAR, first_seen=0.0, last_seen=0.4,
-                occlusion_state=OcclusionState.VISIBLE, ground_point_trajectory=ground_point_trajectory,
-            )
-        ]
+        state = TrackState(
+            track_id="1", vehicle_class=VehicleClass.CAR, first_seen=0.0, last_seen=0.4,
+            occlusion_state=OcclusionState.VISIBLE,
+            trajectory=list(ground_point_trajectory),  # centroid history (image-space tracks use this)
+            ground_point_trajectory=ground_point_trajectory,
+        )
+        result.track_states = [state]
+        # Built by the REAL converter so the fake's track carries the same
+        # motion space / geometry validity the real pipeline would assign for
+        # this calibration profile (it used to hard-code MotionSpace.IMAGE).
+        result.vehicle_tracks = [build_vehicle_track(camera_id, state, calibration_profile=calibration_profile)]
         return result
 
     return fake_run_m1_pipeline
@@ -374,3 +387,57 @@ def test_generic_modules_have_no_hardcoded_c006_paths():
             assert needle not in text, f"{module_path} unexpectedly mentions dataset path marker {needle!r}"
         for needle in value_assignment_markers:
             assert needle not in text, f"{module_path} unexpectedly hardcodes camera id {needle!r}"
+
+
+def test_real_video_limited_chain_with_an_unvalidated_cityflow_profile_never_exports_metric_speed(monkeypatch, tmp_path):
+    """THE bug site (ANVESH_PRODUCT_GAP_AUDIT.md finding 2): `real_video_limited_chain`
+    with a CALIBRATED but metric-UNVALIDATED (CityFlow-supplied) profile used to
+    label centroid-through-homography values m/s and feed them to evidence.
+    Driven here through the exporter itself, asserting on what it EXPORTS."""
+    import json
+
+    import numpy as np
+
+    from anvesh.storage.schemas import MotionSpace
+    from anvesh.world.calibration import from_cityflow_homography
+
+    tiny_video = tmp_path / "tiny.mp4"
+    _write_tiny_video(tiny_video)
+    # a long-lived, slowly moving vehicle; scale 0.01 would make the OLD path read it as "stopped"
+    trajectory = [(50.0 + i, 100.0, i * 0.1) for i in range(5)]
+    monkeypatch.setattr(export_ui_data, "run_m1_pipeline", _fake_run_m1_pipeline_factory(trajectory))
+    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: object())
+
+    captured = []
+    orig = export_ui_data.aggregate_traffic_state
+
+    def spy(camera_id, start, end, tracks, motion_space, tracker, **kwargs):
+        captured.append((motion_space, [t.motion_space for t in tracks]))
+        return orig(camera_id, start, end, tracks, motion_space, tracker, **kwargs)
+
+    monkeypatch.setattr(export_ui_data, "aggregate_traffic_state", spy)
+
+    for scale in (0.01, 40.0):
+        captured.clear()
+        profile = from_cityflow_homography("calib-cf", "cam-test", np.diag([scale, scale, 1.0]), reprojection_error=10.25)
+        result = export_ui_data.real_video_limited_chain(
+            video_path=tiny_video, camera_id="cam-test", sample_seconds=1.0, calibration_profile=profile,
+        )
+
+        assert captured and all(ms == MotionSpace.IMAGE and set(ts) <= {MotionSpace.IMAGE} for ms, ts in captured)
+        for w in result["windows"]:
+            for tracks in w["tracks_by_camera"].values():
+                for t in tracks:
+                    assert t["motion_space"] == "image" and t["speed_unit"] == "px/s"
+                    assert t["geometry_validity"] == "world_unvalidated"
+            for items in w["evidence_by_camera"].values():
+                for item in items:
+                    if item["hypothesis_id"] in ("H2", "H3", "H5"):
+                        assert item["evidence_completeness"] == "none" and item["supporting_track_refs"] == []
+            assert w["candidate_vehicle"]["status"] in ("not_ranked", "no_vehicle_for_hypothesis")
+            assert w["candidate_ranking"]["outcome"] != "ranked"  # abstains: only H1 is evaluable in image space
+        for frame in result["frames"]:
+            for box in frame["boxes"]:
+                assert "km/h" not in json.dumps(box)
+                assert box["speed_geometry"] == "world_unvalidated"
+        assert '"m/s"' not in json.dumps(result)  # no exported quantity is unit-tagged m/s

@@ -47,10 +47,11 @@ from dataclasses import dataclass
 from anvesh.evidence.evidence_builder import build_evidence_for_camera
 from anvesh.evidence.reliability import compute_reliability
 from anvesh.feedback.update_engine import apply_feedback
-from anvesh.fusion.ds_fusion import fuse_two_cameras, single_camera_result
+from anvesh.fusion.ds_fusion import fuse_two_cameras, single_camera_discounted_result
 from anvesh.hypotheses.candidate_vehicle import resolve_candidate_vehicle
 from anvesh.hypotheses.ranking import attach_ranking_to_corridor_state, build_ranking
 from anvesh.propagation.shockwave import predict_propagation
+from anvesh.safety.stop_episodes import build_stop_event
 from anvesh.safety.stopped_vehicle import build_safety_event, classify_stopped_vehicle
 from anvesh.storage.schemas import CameraRole
 from anvesh.world.corridor_state import assemble_corridor_state
@@ -100,6 +101,10 @@ class AnveshWindowResult:
     feedback_reason: object  # str, or None if feedback_result is present
     safety_events: tuple  # tuple of schemas.SafetyEvent (possibly empty)
     limitations: tuple  # tuple of human-readable strings
+    # M-A.1: stop episodes touching this window (`safety.stop_episodes.StopEpisodeView`:
+    # OPENED / CONTINUING / CLOSED); only OPENED ones produced a SafetyEvent. () when the
+    # caller supplied none (per-window classification was used instead).
+    stop_episodes: tuple = ()
 
 
 def _default_ranking_id(camera_ids: tuple, window: tuple) -> str:
@@ -142,6 +147,7 @@ def run_corridor_window(
     feedback_thresholds=None,
     feedback_adjustment_config=None,
     stopped_vehicle_thresholds=None,
+    stop_episodes=None,
     engine_model_id: str = "ds_fusion",
     engine_model_version: str = "v1",
 ) -> AnveshWindowResult:
@@ -187,7 +193,10 @@ def run_corridor_window(
     # --- fusion (single-camera or two-camera) + ranking (fusion.ds_fusion, hypotheses.ranking) ---
     if len(camera_inputs) == 1:
         ci = camera_inputs[0]
-        fusion_result = single_camera_result(ci.camera_id, evidence_by_camera[ci.camera_id], window)
+        # Reliability-discounted (NOT Baseline A's raw BPA): see single_camera_discounted_result.
+        fusion_result = single_camera_discounted_result(
+            ci.camera_id, evidence_by_camera[ci.camera_id], window, reliability_by_camera[ci.camera_id].score
+        )
     else:
         a, b = camera_inputs
         fusion_result = fuse_two_cameras(
@@ -280,12 +289,22 @@ def run_corridor_window(
 
     # --- safety events (safety.stopped_vehicle) -- independent of every stage above ---
     safety_events = []
-    for ci in camera_inputs:
-        for track in ci.tracks:
-            classification = classify_stopped_vehicle(track, stopped_vehicle_thresholds)
-            event = build_safety_event(classification)
-            if event is not None:
-                safety_events.append(event)
+    if stop_episodes is None:
+        # Per-window classification: valid for WHOLE-LIFETIME tracks only. A window-clipped
+        # track can miss a stop that spans a boundary -- streaming callers pass `stop_episodes`.
+        for ci in camera_inputs:
+            for track in ci.tracks:
+                classification = classify_stopped_vehicle(track, stopped_vehicle_thresholds)
+                event = build_safety_event(classification)
+                if event is not None:
+                    safety_events.append(event)
+    else:
+        window_cameras = {ci.camera_id for ci in camera_inputs}
+        for view in stop_episodes:
+            if view.episode.camera_id in window_cameras:
+                event = build_stop_event(view)  # OPENED only: continuing/closing is the same incident
+                if event is not None:
+                    safety_events.append(event)
 
     return AnveshWindowResult(
         window=window,
@@ -302,4 +321,5 @@ def run_corridor_window(
         feedback_reason=feedback_reason,
         safety_events=tuple(safety_events),
         limitations=tuple(limitations),
+        stop_episodes=tuple(stop_episodes) if stop_episodes is not None else (),
     )

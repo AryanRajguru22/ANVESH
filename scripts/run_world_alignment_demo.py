@@ -33,7 +33,7 @@ def _line(title: str) -> None:
 
 
 def build_camera_track_and_observations(camera_id, calibration, tracked_detections, model_id):
-    manager = TrackManager(max_missed_frames=1, partial_after_missed_frames=1)
+    manager = TrackManager(max_occlusion_s=60.0, camera_id="cam-world-demo")  # one synthetic vehicle, sparse timestamps
     observations = []
     for td in tracked_detections:
         ts = td.detection.timestamp

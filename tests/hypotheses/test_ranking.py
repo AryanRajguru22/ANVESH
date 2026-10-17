@@ -211,3 +211,69 @@ def test_attach_ranking_rejects_mismatched_corridor_state_id():
 
     with pytest.raises(ValueError):
         attach_ranking_to_corridor_state(corridor_state, ranking)
+
+
+# ---------------------------------------------------------------------------
+# M-A abstention: a one-candidate comparison is not a ranking
+# ---------------------------------------------------------------------------
+
+
+def _with_completeness(items, completeness_by_hid):
+    out = []
+    for item in items:
+        hid = item.evidence.hypothesis_id
+        comp = completeness_by_hid.get(hid, EvidenceCompleteness.NONE)
+        ev = Evidence(
+            evidence_id=item.evidence.evidence_id, camera_id=item.evidence.camera_id, window=WINDOW,
+            hypothesis_id=hid, signature_match_score=item.evidence.signature_match_score,
+            supporting_track_refs=[], contradicting=item.evidence.contradicting, evidence_completeness=comp,
+        )
+        out.append(EvidenceItem(evidence=ev, evidence_type="test", measured_value=None, direction=item.direction,
+                                reliability=1.0, source="test", metadata={}))
+    return tuple(out)
+
+
+def test_only_one_evaluable_hypothesis_cannot_be_ranked_even_with_strong_support():
+    """Image-space cameras can only ever evaluate H1 (H2-H6 are NONE =
+    zero Dempster mass). Dempster normalisation then hands H1 nearly all the
+    mass; that must not read as a RANKED 'H1, high'."""
+    ev = _with_completeness(
+        _neutral_except("cam-A", "H1", 0.9, EvidenceDirection.SUPPORTS), {"H1": EvidenceCompleteness.PARTIAL}
+    )
+    fusion = single_camera_result("cam-A", ev, WINDOW)
+    # without the rule the fusion itself would happily concentrate on H1
+    assert fusion.final_bpa.theta_mass < 0.9
+
+    ranking = build_ranking("rank-1", "cs-1", fusion, {"cam-A": ev})
+
+    assert ranking.outcome == CandidateOutcome.INSUFFICIENT_EVIDENCE
+
+
+def test_two_evaluable_hypotheses_still_rank_normally():
+    ev = _with_completeness(
+        _neutral_except("cam-A", "H1", 0.9, EvidenceDirection.SUPPORTS),
+        {"H1": EvidenceCompleteness.FULL, "H2": EvidenceCompleteness.FULL},
+    )
+    fusion = single_camera_result("cam-A", ev, WINDOW)
+    ranking = build_ranking("rank-1", "cs-1", fusion, {"cam-A": ev})
+    assert ranking.outcome == CandidateOutcome.RANKED
+    assert ranking.ranked_list[0].hypothesis_id == "H1"
+
+
+def test_evaluable_hypothesis_ids_counts_across_cameras():
+    from anvesh.hypotheses.ranking import evaluable_hypothesis_ids
+
+    a = _with_completeness(_neutral_except("cam-A", "H2", 0.9, EvidenceDirection.SUPPORTS), {"H2": EvidenceCompleteness.PARTIAL})
+    b = _with_completeness(_neutral_except("cam-B", "H3", 0.9, EvidenceDirection.SUPPORTS), {"H3": EvidenceCompleteness.FULL})
+    assert evaluable_hypothesis_ids({"cam-A": a}) == {"H2"}
+    assert evaluable_hypothesis_ids({"cam-A": a, "cam-B": b}) == {"H2", "H3"}
+
+
+def test_abstained_ranking_never_displays_a_high_tier_on_any_entry():
+    ev = _with_completeness(
+        _neutral_except("cam-A", "H1", 0.9, EvidenceDirection.SUPPORTS), {"H1": EvidenceCompleteness.PARTIAL}
+    )
+    ranking = build_ranking("rank-1", "cs-1", single_camera_result("cam-A", ev, WINDOW), {"cam-A": ev})
+    assert ranking.outcome == CandidateOutcome.INSUFFICIENT_EVIDENCE
+    assert ranking.ranked_list[0].belief > 0.5  # raw DS belief kept for audit...
+    assert {e.confidence_tier.value for e in ranking.ranked_list} == {"low"}  # ...but no claimed confidence

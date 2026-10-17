@@ -17,14 +17,43 @@ class Frame:
     """One decoded video frame. Not a dataclass: holding a numpy array in a
     dataclass makes the generated __eq__ compare arrays elementwise, which
     raises when Python tries to reduce that to a single bool -- plain
-    attributes avoid the trap entirely."""
+    attributes avoid the trap entirely.
 
-    __slots__ = ("index", "timestamp", "image")
+    TIMING (streaming, M-A). `timestamp` is STREAM TIME in seconds relative
+    to the start of the source -- the clock the whole world model (tracks,
+    windows, evidence) runs on. For a recorded file it is `index / fps`
+    (deterministic, so batch and stream agree); for a live source it is the
+    monotonic capture clock relative to the first frame. The extra fields are
+    for observability and never feed the world model:
+      - `capture_wall_s`: process-monotonic wall clock when the frame was
+        decoded (latency accounting only; None if the source does not record it)
+      - `decode_s`: seconds spent decoding this frame
+      - `epoch`: connection/session epoch -- increments each time a live
+        source reconnects; a new epoch means tracker IDs are unrelated to the
+        previous epoch's and a new identity session must begin
+      - `gap_before`: number of frames the SOURCE knows it skipped before this
+        one (network stalls, source-side skips); 0 for an intact file
+    """
 
-    def __init__(self, index: int, timestamp: float, image) -> None:
+    __slots__ = ("index", "timestamp", "image", "capture_wall_s", "decode_s", "epoch", "gap_before")
+
+    def __init__(
+        self,
+        index: int,
+        timestamp: float,
+        image,
+        capture_wall_s: float = None,
+        decode_s: float = None,
+        epoch: int = 0,
+        gap_before: int = 0,
+    ) -> None:
         self.index = index
         self.timestamp = timestamp
         self.image = image
+        self.capture_wall_s = capture_wall_s
+        self.decode_s = decode_s
+        self.epoch = epoch
+        self.gap_before = gap_before
 
 
 @dataclass(frozen=True)

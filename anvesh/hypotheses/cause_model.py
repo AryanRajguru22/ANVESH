@@ -199,6 +199,13 @@ H7 = HypothesisSpec(
 # never scored as a singleton.
 HYPOTHESIS_IDS = ("H1", "H2", "H3", "H4", "H5", "H6")
 
+# M-A.1: a hypothesis that is defined by the ABSENCE of something can only be
+# tested when something could have been looked for. H1 ("sustained congestion,
+# no obstruction") is only a real competitor if at least one obstruction test
+# (H2 single stopped vehicle / H3 multiple stopped vehicles) was itself
+# evaluable on the same camera. Used by `ranking.evaluable_hypothesis_ids`.
+COMPETITOR_PREREQUISITES = {"H1": ("H2", "H3")}
+
 ALL_HYPOTHESES = (H1, H2, H3, H4, H5, H6, H7)
 HYPOTHESES_BY_ID = {spec.hypothesis_id: spec for spec in ALL_HYPOTHESES}
 

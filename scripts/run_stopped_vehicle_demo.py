@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))  # allow running without `pip install -e .`
 
 from anvesh.safety.stopped_vehicle import build_safety_event, classify_stopped_vehicle
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import Measurement, MotionSpace, OcclusionState, VehicleClass, VehicleTrack, WorldPosition
 
 
@@ -48,7 +49,7 @@ def _world_track(track_id: str, positions: list) -> VehicleTrack:
         occlusion_state=OcclusionState.VISIBLE,
         position_history=[WorldPosition(world_x=x, world_y=y, timestamp=t) for (x, y, t) in positions],
         speed_estimate=Measurement(value=0.0, error=0.0),
-        motion_space=MotionSpace.WORLD,
+        motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

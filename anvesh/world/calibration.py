@@ -45,6 +45,8 @@ from pathlib import Path
 import numpy as np
 import cv2
 
+from anvesh.storage.schemas import GeometryValidity  # noqa: F401  (re-exported: the capability enum lives with the schemas)
+
 
 class CalibrationStatus(str, Enum):
     UNCALIBRATED = "uncalibrated"
@@ -137,7 +139,15 @@ class CalibrationProfile:
             # fabrication requirement 1 (Commit 5) forbids.
             if self.provenance == CalibrationProvenance.MANUAL_SURVEY and len(self.reference_points) < 4:
                 raise ValueError("a CALIBRATED MANUAL_SURVEY profile requires at least 4 reference points")
+            if self.metric_validation == MetricValidationStatus.VALIDATED and self.units != "meters":
+                # Structural guard: a profile whose output units are not
+                # metres can never be "metric validated".
+                raise ValueError(
+                    f"a VALIDATED profile must have units == 'meters', got {self.units!r}"
+                )
         else:
+            if self.metric_validation == MetricValidationStatus.VALIDATED:
+                raise ValueError("an UNCALIBRATED profile cannot be metric-VALIDATED")
             if self.homography is not None or self.inverse_homography is not None:
                 raise ValueError("an UNCALIBRATED profile must not carry a homography")
             if self.reprojection_error_m is not None:
@@ -145,7 +155,22 @@ class CalibrationProfile:
 
     @property
     def is_calibrated(self) -> bool:
+        """A transform matrix exists. NOT a statement that its output is
+        metric -- use `geometry_validity` / `supports_metric_speed`."""
         return self.status == CalibrationStatus.CALIBRATED
+
+    @property
+    def geometry_validity(self) -> GeometryValidity:
+        if not self.is_calibrated:
+            return GeometryValidity.IMAGE
+        if self.metric_validation == MetricValidationStatus.VALIDATED and self.units == "meters":
+            return GeometryValidity.WORLD_VALIDATED
+        return GeometryValidity.WORLD_UNVALIDATED
+
+    @property
+    def supports_metric_speed(self) -> bool:
+        """True iff m/s / km/h may be derived from this profile."""
+        return self.geometry_validity == GeometryValidity.WORLD_VALIDATED
 
     def image_to_world(self, image_xy: tuple) -> tuple:
         """Project an image-space pixel onto the road plane, in metres.
@@ -217,10 +242,14 @@ def fit_planar_homography(
         inverse_homography=inverse_homography,
         reprojection_error_m=reprojection_error_m,
         provenance=CalibrationProvenance.MANUAL_SURVEY,
-        # A real site survey supplies actual measured-metre world_xy
-        # values (CalibrationPoint's own docstring) -- the metric claim is
-        # validated by construction, unlike an externally-supplied,
-        # unverified homography (see from_cityflow_homography).
+        # KNOWN LIMITATION (M-A, ANVESH_PRODUCT_GAP_AUDIT.md SS5): VALIDATED is
+        # asserted here "by construction" from whatever correspondences the
+        # caller supplied (CalibrationPoint's contract says they are measured
+        # metres) -- there is no hold-out reprojection check, no reprojection
+        # threshold and no ground-truth speed test, and no real survey has ever
+        # been run through this path. It is the only way to reach
+        # `GeometryValidity.WORLD_VALIDATED` today, so synthetic fixtures and any
+        # future surveyed camera pass; "earning" VALIDATED is P2 work.
         metric_validation=MetricValidationStatus.VALIDATED,
     )
 

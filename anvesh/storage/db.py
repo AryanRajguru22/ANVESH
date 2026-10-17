@@ -78,6 +78,7 @@ def _traffic_state_to_dict(ts: TrafficState) -> dict:
         "density": ts.density,
         "congestion_level": ts.congestion_level.value,
         "motion_space": ts.motion_space.value,
+        "mean_speed_available": ts.mean_speed_available,
         "schema_version": ts.schema_version,
     }
 
@@ -94,6 +95,7 @@ def _traffic_state_from_dict(d: dict) -> TrafficState:
         density=d["density"],
         congestion_level=d["congestion_level"],
         motion_space=d["motion_space"],
+        mean_speed_available=d.get("mean_speed_available", True),
         schema_version=d.get("schema_version", "1.0.0"),
     )
 

@@ -9,6 +9,7 @@ from anvesh.hypotheses.candidate_vehicle import (
 )
 from anvesh.hypotheses.ranking import build_ranking
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     CandidateCauseHypothesis,
@@ -272,7 +273,7 @@ def _stopped_track(track_id):
         occlusion_state=OcclusionState.VISIBLE,
         position_history=[],
         speed_estimate=Measurement(value=0.5, error=0.0),  # slow, sustained -> "stopped"
-        motion_space=MotionSpace.WORLD,
+        motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

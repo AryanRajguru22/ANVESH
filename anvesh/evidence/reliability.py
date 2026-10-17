@@ -9,6 +9,12 @@ still-unimplemented thing that will eventually *consume* a score like this
 one as one input. Nothing here should be read as a calibrated confidence
 level; it exists only to give M4 (and this milestone's own diagnostics) a
 documented way to say "trust this camera's evidence more/less this window."
+
+KNOWN GAP (M-A.1): the score does not see FRAME loss. `temporal_coverage` is computed from the
+tracks' own spans, not from how much of the window the camera actually delivered, so a window with
+dropped frames or a short silence is flagged by `WindowSnapshot.availability` /
+`WindowAnalysis.status` but is NOT down-weighted here. (Missing speed measurements are: see
+`_calibration_factor`.)
 """
 
 from __future__ import annotations
@@ -71,11 +77,21 @@ def _tracking_continuity_factor(tracks: list) -> float:
     return visible / len(tracks)
 
 
-def _calibration_factor(motion_space: MotionSpace) -> float:
+def _calibration_factor(motion_space: MotionSpace, tracks: list = ()) -> float:
     # Image-space (uncalibrated) evidence cannot be cross-camera compared
     # against known geometry, so it is trusted less -- not zero, since it
     # is still real per-camera evidence, just less useful downstream.
-    return 1.0 if motion_space == MotionSpace.WORLD else 0.5
+    #
+    # M-A.1: validated geometry is not the same as MEASURED speed. A metric camera
+    # whose vehicles mostly have no usable speed estimate is no better than an
+    # image-space one for speed-based evidence, so the factor interpolates between
+    # the image-space floor (0.5, no measured speeds) and 1.0 (every vehicle measured).
+    if motion_space != MotionSpace.WORLD:
+        return 0.5
+    if not tracks:
+        return 1.0
+    measured = sum(1 for t in tracks if t.motion_space == MotionSpace.WORLD and t.speed_available)
+    return 0.5 + 0.5 * (measured / len(tracks))
 
 
 def _temporal_coverage_factor(tracks: list, window_start: float, window_end: float) -> float:
@@ -113,7 +129,7 @@ def compute_reliability(
     factors = {
         "observation_count": _observation_count_factor(len(tracks), saturating_observation_count),
         "tracking_continuity": _tracking_continuity_factor(tracks),
-        "calibration": _calibration_factor(motion_space),
+        "calibration": _calibration_factor(motion_space, tracks),
         "temporal_coverage": _temporal_coverage_factor(tracks, window_start, window_end),
     }
 

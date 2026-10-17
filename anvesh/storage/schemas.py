@@ -178,6 +178,33 @@ class MotionSpace(str, Enum):
     WORLD = "world"
 
 
+class GeometryValidity(str, Enum):
+    """What kind of quantity a camera's geometry can honestly produce (M-A
+    speed-safety invariant, ANVESH_PRODUCT_GAP_AUDIT.md finding 2).
+
+      IMAGE             -- no usable transform; only pixel quantities exist.
+      WORLD_UNVALIDATED -- a transform exists but its output scale/units are
+                           not independently confirmed (e.g. CityFlow's
+                           supplied homography). Non-metric: never m/s, km/h,
+                           or an input to an m/s-thresholded consumer.
+      WORLD_VALIDATED   -- transform exists AND metric scale validated; the
+                           only state that may produce m/s or km/h.
+
+    Relationship to `MotionSpace`: `MotionSpace.WORLD` means EXACTLY
+    "WORLD_VALIDATED" -- position_history is metres, speed_estimate is m/s.
+    `MotionSpace.IMAGE` covers both IMAGE and WORLD_UNVALIDATED: a track on a
+    camera whose transform is unvalidated carries image-space (px, px/s)
+    kinematics, and records `geometry_validity=WORLD_UNVALIDATED` so a
+    consumer can tell "no transform exists" from "a transform exists but is
+    not trusted". Every existing `motion_space == WORLD` consumer therefore
+    fails closed for an unvalidated calibration without further edits.
+    """
+
+    IMAGE = "image"
+    WORLD_UNVALIDATED = "world_unvalidated"
+    WORLD_VALIDATED = "world_validated"
+
+
 class CongestionLevel(str, Enum):
     FREE_FLOW = "free_flow"
     BUILDING = "building"
@@ -273,7 +300,17 @@ class VehicleTrack:
     position_history: list
     speed_estimate: Measurement
     motion_space: MotionSpace
-    schema_version: str = "1.0.0"
+    schema_version: str = "1.1.0"
+    # M-A (schema 1.1.0): see `GeometryValidity`. M-A.1: a WORLD (metres) track
+    # MUST declare `geometry_validity=WORLD_VALIDATED` explicitly -- omitting it
+    # raises, because silently deriving "validated" from "world" is exactly how an
+    # unvalidated transform used to be promoted to metres. Only the conservative
+    # IMAGE case may be omitted (it can only ever be derived as IMAGE).
+    geometry_validity: GeometryValidity = None
+    # False when `speed_estimate` is NOT a real measurement (too few samples /
+    # implausible): `speed_estimate.value` is then a placeholder that no
+    # consumer may threshold or average. Never a fabricated "0 m/s".
+    speed_available: bool = True
 
     def __post_init__(self) -> None:
         _require_non_empty(self.track_id, "track_id")
@@ -285,10 +322,38 @@ class VehicleTrack:
         object.__setattr__(self, "vehicle_class", VehicleClass(self.vehicle_class))
         object.__setattr__(self, "occlusion_state", OcclusionState(self.occlusion_state))
         object.__setattr__(self, "motion_space", MotionSpace(self.motion_space))
+        if self.geometry_validity is None:
+            if self.motion_space == MotionSpace.WORLD:
+                raise ValueError(
+                    "a motion_space=WORLD (metres) VehicleTrack must declare geometry_validity explicitly "
+                    "(GeometryValidity.WORLD_VALIDATED); it is never derived from motion_space"
+                )
+            object.__setattr__(self, "geometry_validity", GeometryValidity.IMAGE)
+        else:
+            object.__setattr__(self, "geometry_validity", GeometryValidity(self.geometry_validity))
+        # Structural speed-safety invariant: metres only from validated geometry.
+        if self.motion_space == MotionSpace.WORLD and self.geometry_validity != GeometryValidity.WORLD_VALIDATED:
+            raise ValueError("motion_space=WORLD (metres) requires geometry_validity=WORLD_VALIDATED")
+        if self.motion_space == MotionSpace.IMAGE and self.geometry_validity == GeometryValidity.WORLD_VALIDATED:
+            raise ValueError("geometry_validity=WORLD_VALIDATED requires motion_space=WORLD")
+        # Unit consistency: a metric track's positions are `WorldPosition` (metres);
+        # an image track's are plain (x_px, y_px, t) tuples. A mix, or the wrong kind,
+        # means the declared space does not describe the data.
+        is_world_pos = [isinstance(p, WorldPosition) for p in self.position_history]
+        if self.motion_space == MotionSpace.WORLD and not all(is_world_pos):
+            raise ValueError("motion_space=WORLD requires every position_history entry to be a WorldPosition (metres)")
+        if self.motion_space == MotionSpace.IMAGE and any(is_world_pos):
+            raise ValueError("motion_space=IMAGE (pixels) must not carry WorldPosition (metre) entries")
 
 
 @dataclass(frozen=True)
 class TrafficState:
+    # KNOWN GAP (M-A.1): unlike `VehicleTrack`, this record carries no `geometry_validity`, so
+    # `motion_space=WORLD` here is not structurally tied to validated geometry. It is only as
+    # trustworthy as the code that builds it: `aggregate_traffic_state` refuses a space that
+    # disagrees with its tracks, but direct construction (evaluation scenarios, demos) and
+    # rehydration from storage are unguarded. `mean_speed_available=False` means `mean_speed`
+    # is a 0.0 placeholder, not a measurement.
     camera_id: str
     window_start: float
     window_end: float
@@ -299,7 +364,12 @@ class TrafficState:
     density: float
     congestion_level: CongestionLevel
     motion_space: MotionSpace
-    schema_version: str = "1.0.0"
+    schema_version: str = "1.1.0"
+    # M-A.1 (schema 1.1.0): False when NO vehicle in the window carried a real
+    # speed measurement. `mean_speed.value` is then a 0.0 PLACEHOLDER -- not
+    # "traffic at 0 m/s" -- and no consumer or display may read it as a speed.
+    # (True keeps the pre-1.1.0 meaning, so old rows/constructors are unchanged.)
+    mean_speed_available: bool = True
 
     def __post_init__(self) -> None:
         _require_non_empty(self.camera_id, "camera_id")

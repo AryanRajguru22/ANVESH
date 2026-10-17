@@ -23,3 +23,11 @@ outputs/
 
 # Ultralytics run artifacts / local settings
 runs/
+
+# Local media and generated UI artifacts: kept on disk, never committed.
+# ui/anvesh_dashboard.template.html (the dashboard source) is deliberately not ignored.
+/demo.mp4
+/traffic.mp4
+/ui/anvesh_dashboard.html
+/ui/data/
+/ui/live/

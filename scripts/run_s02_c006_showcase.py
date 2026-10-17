@@ -145,7 +145,11 @@ def run_s02_c006_showcase(
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(data, indent=2))
+    # encoding="utf-8" is explicit, not the default, because Windows'
+    # locale-default text encoding (often cp1252) silently mis-encodes
+    # non-ASCII output -- discovered by this pass's own OUTLIER speed
+    # label ("UNRELIABLE — OUTLIER"), which contains an em dash.
+    output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     _p(f"Wrote {output_path} ({output_path.stat().st_size} bytes)")
 
     return data

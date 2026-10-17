@@ -199,7 +199,7 @@ def test_integration_detection_through_track_manager_to_lane_history():
     assert detection.ground_point == (705.0, 300.0)
     assert detection.centroid != detection.ground_point
 
-    manager = TrackManager(max_missed_frames=3, partial_after_missed_frames=1)
+    manager = TrackManager(camera_id="s02_c006")
     manager.update(0.0, [TrackedDetection(detection=detection, track_id="7")])
     manager.finalize()
 
@@ -208,7 +208,8 @@ def test_integration_detection_through_track_manager_to_lane_history():
 
     lane_history = build_track_lane_history("s02_c006", state, config.regions)
 
-    assert lane_history.track_id == "s02_c006:7"
+    assert lane_history.track_id == f"s02_c006:{state.track_id}"
+    assert state.raw_tracker_id == "7"
     assert len(lane_history.samples) == 1
     assert lane_history.samples[0].result.status == LaneAssignmentStatus.ASSIGNED
     assert lane_history.samples[0].result.lane_id == "L1"

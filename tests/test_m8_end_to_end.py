@@ -15,6 +15,7 @@ import pytest
 from anvesh.pipeline import CameraWindowInput, run_corridor_window
 from anvesh.hypotheses.candidate_vehicle import CandidateVehicleResolution, CandidateVehicleStatus
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     CandidateOutcome,
@@ -44,7 +45,7 @@ def _tracks(camera_id, count, speed, motion_space=MotionSpace.WORLD, first_seen=
             occlusion_state=OcclusionState.VISIBLE,
             position_history=[],
             speed_estimate=Measurement(value=speed, error=0.0),
-            motion_space=motion_space,
+            motion_space=motion_space, geometry_validity=(GeometryValidity.WORLD_VALIDATED if motion_space == MotionSpace.WORLD else GeometryValidity.IMAGE),
         )
         for i in range(count)
     ]
@@ -311,7 +312,7 @@ def _stopped_track(camera_id, suffix="stopped"):
         track_id=f"{camera_id}:{suffix}", camera_id=camera_id, first_seen=positions[0][2], last_seen=positions[-1][2],
         vehicle_class=VehicleClass.CAR, occlusion_state=OcclusionState.VISIBLE,
         position_history=[WorldPosition(world_x=x, world_y=y, timestamp=t) for (x, y, t) in positions],
-        speed_estimate=Measurement(value=0.1, error=0.02), motion_space=MotionSpace.WORLD,
+        speed_estimate=Measurement(value=0.1, error=0.02), motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

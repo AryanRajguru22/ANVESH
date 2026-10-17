@@ -8,6 +8,7 @@ from anvesh.perception.windowing import (
     tracks_in_window,
     video_duration_from_tracks,
 )
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import Measurement, MotionSpace, OcclusionState, VehicleClass, VehicleTrack
 
 
@@ -21,7 +22,7 @@ def _track(track_id, first_seen, last_seen, speed_value=5.0):
         occlusion_state=OcclusionState.VISIBLE,
         position_history=[],
         speed_estimate=Measurement(value=speed_value, error=0.0),
-        motion_space=MotionSpace.WORLD,
+        motion_space=MotionSpace.WORLD, geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

@@ -1,0 +1,17 @@
+# docker compose up --build        then open http://localhost:8750/
+# First start: read the generated admin password with
+#   docker compose exec anvesh cat /data/initial_credentials.txt
+services:
+  anvesh:
+    build: .
+    ports:
+      - "8750:8750"
+    volumes:
+      - anvesh-data:/data
+      # optional: make a video available to register as a camera (file cameras must live under a media root)
+      # - ./videos:/videos:ro
+    environment:
+      ANVESH_SECURE_COOKIES: "0"   # set to 1 when served over HTTPS
+    restart: unless-stopped
+volumes:
+  anvesh-data:

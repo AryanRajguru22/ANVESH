@@ -31,3 +31,28 @@ runs/
 /ui/anvesh_dashboard.html
 /ui/data/
 /ui/live/
+
+# ML training milestone: datasets and training artifacts stay on disk, never committed.
+datasets/mio_tcd/
+models/finetuned/
+/weights/
+datasets/local_cctv/
+
+# demo kit: disposable demo data and run logs stay on disk (see demo/README.md)
+/demo/data/
+/demo/data-*/
+/demo/probe_data/
+/demo/runs/
+/demo/*.log
+/demo/*.err
+/demo/*.txt
+
+# plate reader: datasets and the demo clip built from them stay on disk; only the small trained detector + its metrics are committed
+/datasets/plates_hf/
+/datasets/plates_yolo/
+/demo/plates_demo.mp4
+/demo/plates_demo.json
+/models/plates/train.log
+/models/plates/plate_v1/weights/last.pt
+/models/plates/plate_v1/*.jpg
+/models/plates/plate_v1/*.png

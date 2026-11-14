@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANVESH - Live Traffic Watch</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%231f6feb'/%3E%3Cpath d='M3 12 8 3l5 9' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/officer.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">A</span><div><b>ANVESH</b><small>Live traffic watch</small></div></div>
+  <div class="top-note" id="topNote">Demonstration &middot; every alert is a candidate for an officer to confirm</div>
+  <div class="top-right"><span id="who" class="who"></span><a class="link" href="/advanced" title="Cases, evidence, users, audit and settings">Full dashboard</a></div>
+</header>
+
+<main id="app">
+  <!-- sign-in (only shown when the one-click demo sign-in is not available) -->
+  <section id="login" class="login" hidden>
+    <h1>Sign in</h1>
+    <form id="loginForm" autocomplete="off">
+      <label>User name<input id="u" autocomplete="username" required></label>
+      <label>Password<input id="p" type="password" autocomplete="current-password" required></label>
+      <button class="btn primary big" type="submit">Sign in</button>
+      <p id="loginErr" class="err" role="alert"></p>
+    </form>
+  </section>
+
+  <!-- choose what to watch -->
+  <section id="chooser" class="chooser" hidden>
+    <h1>What would you like to watch?</h1>
+    <p class="sub">Click one. It starts straight away and everything appears on the video as it plays.</p>
+    <div id="cards" class="cards"></div>
+  </section>
+
+  <!-- the live screen -->
+  <section id="live" class="live" hidden>
+    <div class="stage-col">
+      <div class="srcbar" id="srcbar"></div>
+      <div class="stage" id="stage">
+        <img id="video" alt="Live annotated traffic video" src="">
+        <div class="stage-msg" id="stageMsg" hidden></div>
+        <div class="end-card" id="endCard" hidden>
+          <h2 id="endTitle">Finished</h2>
+          <p id="endText"></p>
+          <button class="btn primary big" id="againBtn" type="button">Play again</button>
+        </div>
+      </div>
+      <div class="ctrl">
+        <button class="btn" id="pauseBtn" type="button">Pause</button>
+        <button class="btn danger" id="stopBtn" type="button">Stop</button>
+        <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+        <span class="clock" id="clock">00:00</span>
+        <button class="btn" id="fsBtn" type="button">Full screen</button>
+      </div>
+      <div class="legend" aria-label="How to read the video">
+        <span><i class="sw lane"></i>Lane areas</span>
+        <span><i class="sw jam"></i>Vehicles in a jam</span>
+        <span><i class="sw cause"></i>Jam cause (candidate)</span>
+        <span><i class="sw flag"></i>Alert vehicle</span>
+        <span><i class="sw plate"></i>Plate read</span>
+        <span class="muted">Speeds marked ~ are approximate</span>
+      </div>
+    </div>
+
+    <aside class="side">
+      <div class="tiles" id="tiles"></div>
+      <div class="alerts-head"><h2>Alerts</h2><span id="alertCount" class="pill"></span></div>
+      <ol class="alerts" id="alerts"><li class="empty">Nothing to report yet. Alerts appear here the moment they are detected.</li></ol>
+    </aside>
+  </section>
+</main>
+
+<div class="lightbox" id="lightbox" hidden><img id="lbImg" alt="Alert picture"><button class="btn" id="lbClose" type="button">Close</button></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/officer.js"></script>
+</body>
+</html>

@@ -65,3 +65,11 @@ ultralytics==8.4.132
 ultralytics-platform==0.1.19
 ultralytics-thop==2.1.6
 urllib3==2.7.0
+# added for the live plate reader (rapidocr-onnxruntime and what it pulls in)
+flatbuffers==25.12.19
+onnxruntime==1.32.0
+protobuf==7.36.2
+pyclipper==1.4.0
+rapidocr-onnxruntime==1.4.4
+shapely==2.2.0
+tqdm==4.70.1

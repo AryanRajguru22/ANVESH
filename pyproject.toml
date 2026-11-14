@@ -14,6 +14,7 @@ dependencies = [
     "ultralytics==8.4.132",
     "numpy==2.4.6",
     "lap==0.5.13",
+    "rapidocr-onnxruntime==1.4.4",  # live number-plate OCR (officer screen); onnxruntime, shapely, pyclipper come with it
 ]
 
 [project.optional-dependencies]
@@ -28,6 +29,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["anvesh*"]
+
+[tool.setuptools.package-data]
+anvesh = ["app/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

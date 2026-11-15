@@ -1,0 +1,343 @@
+{
+ "max_stream_s": 1200,
+ "realtime_factor": 1.0,
+ "stop_criterion": "displacement",
+ "speed_limit_kmh": 112.7,
+ "speed_zone": [
+  [
+   358,
+   225
+  ],
+  [
+   506,
+   225
+  ],
+  [
+   640,
+   315
+  ],
+  [
+   640,
+   360
+  ],
+  [
+   397,
+   360
+  ]
+ ],
+ "calibration": {
+  "reference_points": [
+   {
+    "image_xy": [
+     489.2,
+     336.8
+    ],
+    "world_xy": [
+     0,
+     2
+    ]
+   },
+   {
+    "image_xy": [
+     582.3,
+     336.7
+    ],
+    "world_xy": [
+     3.65,
+     2
+    ]
+   },
+   {
+    "image_xy": [
+     442.8,
+     276.1
+    ],
+    "world_xy": [
+     0,
+     9
+    ]
+   },
+   {
+    "image_xy": [
+     433.2,
+     263.9
+    ],
+    "world_xy": [
+     0,
+     11
+    ]
+   },
+   {
+    "image_xy": [
+     511.8,
+     276.2
+    ],
+    "world_xy": [
+     3.65,
+     9
+    ]
+   },
+   {
+    "image_xy": [
+     498.3,
+     264.7
+    ],
+    "world_xy": [
+     3.65,
+     11
+    ]
+   },
+   {
+    "image_xy": [
+     411.1,
+     234.9
+    ],
+    "world_xy": [
+     0,
+     18
+    ]
+   },
+   {
+    "image_xy": [
+     405.4,
+     227.7
+    ],
+    "world_xy": [
+     0,
+     20
+    ]
+   },
+   {
+    "image_xy": [
+     464.8,
+     236.2
+    ],
+    "world_xy": [
+     3.65,
+     18
+    ]
+   },
+   {
+    "image_xy": [
+     457.1,
+     229.9
+    ],
+    "world_xy": [
+     3.65,
+     20
+    ]
+   }
+  ],
+  "validation": {
+   "kind": "marking_standard_holdout",
+   "n_holdout_points": 4,
+   "holdout_rmse_m": 0.431,
+   "tolerance_m": 1.0,
+   "evidence_ref": "demo/README.md#speed-calibration; UK TSM ch.5 Table 2-2 / Fig 2-3 diagram 1005.1 (2 m mark + 7 m gap); dash 3 (4 ends) held out; road identity and lane width (3.65 m) ASSUMED, site not surveyed"
+  }
+ },
+ "direction_zones": [
+  {
+   "zone_id": "toward-camera",
+   "polygon": [
+    [
+     337,
+     150
+    ],
+    [
+     395,
+     150
+    ],
+    [
+     640,
+     315
+    ],
+    [
+     640,
+     360
+    ],
+    [
+     397,
+     360
+    ]
+   ],
+   "expected": [
+    0.6,
+    0.8
+   ],
+   "min_displacement_px": 60,
+   "min_duration_s": 1.5
+  },
+  {
+   "zone_id": "away-from-camera",
+   "polygon": [
+    [
+     231,
+     150
+    ],
+    [
+     302,
+     150
+    ],
+    [
+     245,
+     360
+    ],
+    [
+     0,
+     360
+    ],
+    [
+     0,
+     305
+    ]
+   ],
+   "expected": [
+    0.6,
+    -0.8
+   ],
+   "min_displacement_px": 60,
+   "min_duration_s": 1.5
+  }
+ ],
+ "lanes": [
+  {
+   "lane_id": "TOWARD-3-offside",
+   "vertices": [
+    [
+     344,
+     175
+    ],
+    [
+     365,
+     175
+    ],
+    [
+     507,
+     360
+    ],
+    [
+     397,
+     360
+    ]
+   ]
+  },
+  {
+   "lane_id": "TOWARD-2",
+   "vertices": [
+    [
+     365,
+     175
+    ],
+    [
+     393,
+     175
+    ],
+    [
+     609,
+     360
+    ],
+    [
+     507,
+     360
+    ]
+   ]
+  },
+  {
+   "lane_id": "TOWARD-1-nearside",
+   "vertices": [
+    [
+     393,
+     175
+    ],
+    [
+     432,
+     175
+    ],
+    [
+     640,
+     315
+    ],
+    [
+     640,
+     360
+    ],
+    [
+     609,
+     360
+    ]
+   ]
+  },
+  {
+   "lane_id": "AWAY-1-nearside",
+   "vertices": [
+    [
+     231,
+     175
+    ],
+    [
+     242,
+     175
+    ],
+    [
+     20,
+     360
+    ],
+    [
+     0,
+     360
+    ],
+    [
+     0,
+     305
+    ]
+   ]
+  },
+  {
+   "lane_id": "AWAY-2",
+   "vertices": [
+    [
+     242,
+     175
+    ],
+    [
+     268,
+     175
+    ],
+    [
+     129,
+     360
+    ],
+    [
+     20,
+     360
+    ]
+   ]
+  },
+  {
+   "lane_id": "AWAY-3-offside",
+   "vertices": [
+    [
+     268,
+     175
+    ],
+    [
+     303,
+     175
+    ],
+    [
+     245,
+     360
+    ],
+    [
+     129,
+     360
+    ]
+   ]
+  }
+ ],
+ "thresholds": {
+  "queue_peer_stops": 3,
+  "congestion_close_grace_s": 60
+ }
+}

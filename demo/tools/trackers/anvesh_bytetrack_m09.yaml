@@ -1,0 +1,8 @@
+# ByteTrack settings for the demo study (Ultralytics format). Differences from the library default bytetrack.yaml: match_thresh 0.8 -> 0.9 only (track_buffer stays 30); the _b50 files also set track_buffer 50.
+tracker_type: bytetrack
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 30
+match_thresh: 0.9
+fuse_score: True

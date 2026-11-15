@@ -1,0 +1,21 @@
+{
+  "_comment": "SYNTHETIC SANDBOX DATA. Every record below is invented for development/testing. None describes a real vehicle or person. It is served only by the sandbox registry adapter, only for demo/simulated data classes, and is always labelled as test data.",
+  "synthetic": true,
+  "records": {
+    "MH12AB1234": {
+      "registration_status": "active", "vehicle_class": "motor car", "make_model": "TEST MAKE / TEST MODEL A", "colour": "white", "fuel": "petrol",
+      "insurance_valid_until": "2099-12-31", "owner_name": "TEST OWNER ALPHA (SYNTHETIC)", "owner_address": "1 Test Lane, Testville (SYNTHETIC)",
+      "owner_contact": "+00-000-0000001 (SYNTHETIC)"
+    },
+    "DL8CAF5030": {
+      "registration_status": "active", "vehicle_class": "motor cycle", "make_model": "TEST MAKE / TEST MODEL B", "colour": "black", "fuel": "petrol",
+      "insurance_valid_until": "2099-12-31", "owner_name": "TEST OWNER BETA (SYNTHETIC)", "owner_address": "2 Test Road, Testville (SYNTHETIC)",
+      "owner_contact": "+00-000-0000002 (SYNTHETIC)"
+    },
+    "KA01MX9999": {
+      "registration_status": "expired", "vehicle_class": "heavy goods vehicle", "make_model": "TEST MAKE / TEST MODEL C", "colour": "blue", "fuel": "diesel",
+      "insurance_valid_until": "2000-01-01", "owner_name": "TEST OWNER GAMMA (SYNTHETIC)", "owner_address": "3 Test Street, Testville (SYNTHETIC)",
+      "owner_contact": "+00-000-0000003 (SYNTHETIC)"
+    }
+  }
+}

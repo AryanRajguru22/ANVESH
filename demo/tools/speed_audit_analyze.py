@@ -48,6 +48,7 @@ def main():
     ap.add_argument("--tracks", default=str(REPO / "demo" / "runs" / "speed_audit_tracks.json"))
     ap.add_argument("--config", default=str(REPO / "demo" / "camera_config.json"))
     ap.add_argument("--out", default=str(REPO / "docs" / "benchmarks" / "speed_audit_summary.json"))
+    ap.add_argument("--mode", choices=("app", "legacy"), default="app", help="app = the estimator settings the app uses now; legacy = window not limited to the zone (the behaviour before the fix)")
     a = ap.parse_args()
     data = json.loads(Path(a.tracks).read_text(encoding="utf-8"))
     cfg = json.loads(Path(a.config).read_text(encoding="utf-8"))
@@ -56,9 +57,14 @@ def main():
     lanes = {l["lane_id"]: l["vertices"] for l in cfg["lanes"]}
     W, Hh = data["frame_size"]
     fps = data["fps"]
-    out = {"video": data["video"], "fps": fps, "frames": data["frames"], "model": data["model"], "boxes": len(data["rows"])}
+    out = {"mode": a.mode, "video": data["video"], "fps": fps, "frames": data["frames"], "model": data["model"], "boxes": len(data["rows"])}
 
     # ---- 1 timing
+    def mk(z):
+        if a.mode == "legacy":
+            return LiveSpeed(profile, z, frame_size=(W, Hh), in_zone_only=False, max_gap_s=1e9, max_jump_m=1e9, outlier_floor_m=1e9)
+        return LiveSpeed(profile, z, frame_size=(W, Hh), min_span_s=0.4, min_samples=8, ema=1.0, max_error_kmh=10.0)
+
     out["timing"] = {"container_minus_index_over_fps_s": data["pos_msec_minus_index_over_fps_s"], "fps": fps}
 
     tracks = collections.defaultdict(list)
@@ -84,7 +90,7 @@ def main():
     per_sec = collections.defaultdict(list)
     status_count = collections.Counter()
     for rid in tracks:
-        ls = LiveSpeed(profile, zone, frame_size=(W, Hh))
+        ls = mk(zone)
         ser = series(rid)
         nxt = 0.0
         for i, s in enumerate(ser):
@@ -118,7 +124,7 @@ def main():
         base = series(rid, "bottom")
         for mode in ("centre", "bl", "br"):
             alt = series(rid, mode)
-            ls_b, ls_a = LiveSpeed(profile, None, frame_size=(W, Hh)), LiveSpeed(profile, None, frame_size=(W, Hh))
+            ls_b, ls_a = mk(None), mk(None)
             for i in range(30, len(base), 25):
                 zone_ok = point_in_polygon(base[i].ground, zone)
                 if not zone_ok:
@@ -132,7 +138,7 @@ def main():
     near_far = []
     for rid in tracks:
         ser = series(rid)
-        ls = LiveSpeed(profile, zone, frame_size=(W, Hh))
+        ls = mk(zone)
         far, near = [], []
         for i in range(len(ser)):
             if i % 5:

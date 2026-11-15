@@ -62,18 +62,18 @@ A(BUL([
 # =============================================================== CH 21
 A(H1("Chapter 21 - Analytical Validity: What the Numbers Do and Do Not Mean"))
 A(H2("21.1 Speed estimation"))
-A(P("Pipeline: ground-contact point of each tracked box (bottom centre, never the centroid) -> homography to road-plane metres -> least-squares slope of position over a 1.6 s window (`livespeed.py`; `perception/speed_estimation.py` for the engine) -> per-track smoothing. "
+A(P("Pipeline: ground-contact point of each tracked box (bottom centre, never the centroid) -> homography to road-plane metres -> least-squares slope of position over the latest samples INSIDE the calibrated zone (<= 1.6 s, >= 8 samples, >= 0.4 s) (`livespeed.py`; `perception/speed_estimation.py` for the engine) -> per-track smoothing. "
     "Safety invariant (M-A): a km/h value exists **only** when the camera's geometry is validated as metric; otherwise the system carries unit-less image-space motion and the screen shows \"not calibrated\"."))
 A(TABLE(["Assumption / error source", "Effect"], [
     ["Scale from the UK lane-marking standard: 2 m dash + 7 m gap (9 m pitch), lane width 3.65 m. The site was **not surveyed** and the road's identity is unverified", "any wrong pitch scales every speed by the same factor (the shorter 1 m + 5 m marking would read about 65 km/h instead of about 97). A homography absorbs a uniform scale, so the hold-out test cannot detect it. Plausibly +/-10 % or more, **not** in the displayed +/- band"],
     ["Planar road assumption, one camera, one homography", "a crest, a curve or the central reservation breaks the plane; only the toward-camera carriageway was fitted"],
     ["Fit quality: RMSE 0.094 m on 10 points; hold-out dash 0.43 m", "checks self-consistency of the geometry, not the metric scale"],
     ["Pixel scale grows with distance: about 0.42 m/px at row 225, 0.10 m/px at row 320", "far vehicles are noisy, so the displayed speed is limited to a near-field `speed_zone` (rows >= 225); boxes clipped by the frame edge are discarded"],
-    ["Ground point from a bounding box, not the tyre contact", "a few pixels of jitter become km/h; the slope over 1.6 s and the plausibility gate (`MAX_PLAUSIBLE_SPEED_KMH`) limit it; implausible tracks are rejected"],
+    ["Ground point from a bounding box, not the tyre contact", "a few pixels of jitter become km/h; the least-squares fit, outlier removal and the plausibility gate (`MAX_PLAUSIBLE_SPEED_KMH`) limit it; implausible tracks are rejected"],
     ["Timestamps come from the video clock", "a time-lapsed or speed-altered video would scale all speeds; this footage looks real-time but that is not verified"],
 ], [3.2, 3.6], "Speed: assumptions and sources of error"))
-A(P("Reliable only for tracks inside the speed zone with at least 1.6 s of unclipped history. Unreliable: far field, the away-from-camera carriageway, short tracks, track ID swaps, anything outside the fitted plane. "
-    "Check done in `demo/tools/speed_plausibility.py` (first 300 s): median per-track speed 97 km/h, p10 87, p90 107, max 116 - the right order of magnitude for a UK motorway, which is a plausibility check, **not an accuracy measurement**. There is no radar or GPS ground truth for this clip. The over-speed threshold (112.7 km/h = 70 mph) is a demonstration value."))
+A(P("Reliable only for tracks inside the speed zone with at least 0.4 s (8 samples) of unclipped in-zone history (a fast vehicle crosses the ~20 m zone in ~0.7 s). Unreliable: far field, the away-from-camera carriageway, short tracks, track ID swaps, anything outside the fitted plane. "
+    "Check done in `demo/tools/speed_plausibility.py` (first 300 s): the Session 10 audit (`docs/ANVESH_SPEED_AUDIT_FINDINGS.md`) found that the fit window used to reach into the extrapolated far field (inflating speeds ~13-17 %); after the fix the median is 94.9 km/h, p90 109.3, trucks 88.1 - a plausibility check, **not an accuracy measurement**. There is no radar or GPS ground truth for this clip. The over-speed threshold (112.7 km/h = 70 mph) is a demonstration value."))
 A(H2("21.2 Congestion"))
 A(P("A window (default 10 s, non-overlapping) of tracks is summarised by `aggregate_traffic_state`. What is actually measured:"))
 A(BUL([

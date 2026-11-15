@@ -11,7 +11,7 @@
   const BLANK_GIF = "data:image/gif;base64,R0lGODlhAQABAAAAACw=";
   const POLL_MS = 2000;
 
-  const SPEED_STATUS = { outside_speed_zone: "outside speed zone", insufficient_history: "measuring...", no_metric_calibration: "no calibration", rejected_unstable: "unstable track", rejected_implausible: "implausible", clipped_at_frame_edge: "at frame edge" };
+  const SPEED_STATUS = { outside_speed_zone: "outside speed zone", insufficient_history: "measuring...", no_metric_calibration: "no calibration", insufficient_precision: "too imprecise", rejected_unstable: "unstable track", rejected_implausible: "implausible", clipped_at_frame_edge: "at frame edge" };
   const PLATE_STATUS = { unreadable_too_small: ["unreadable (too small)", "bad"], marginal: ["marginal - needs review", "warn"], candidate_size: ["size may allow a read", "info"] };
 
   const store = {

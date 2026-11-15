@@ -353,7 +353,7 @@ class ProcessingSession:
         self.tracker = tracker
         self.tracker_label = tracker.model_id
         self.fps = float(self.source.fps())
-        self.live_speed = LiveSpeed(self.profile, cfg.speed_zone, frame_size=lambda: self._frame_size)
+        self.live_speed = LiveSpeed(self.profile, cfg.speed_zone, min_span_s=0.4, min_samples=8, ema=1.0, max_error_kmh=10.0, frame_size=lambda: self._frame_size)
         self._duration_s = self._source_duration(cam, cfg)
         if not self.simulated and not cfg.threshold("plate_reader_off", 0):
             self.plate_reader = PlateReader(min_vehicle_px=int(cfg.threshold("plate_min_vehicle_px", 110)))

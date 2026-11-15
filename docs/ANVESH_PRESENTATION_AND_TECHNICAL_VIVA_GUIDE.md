@@ -19,7 +19,7 @@ You were asked: *how many frames per second does it process, which model, which 
 |---|---|
 | **How many frames per second?** | "The video is 25 fps. In our last 20-minute real-time test the system averaged **21.8 fps** and processed all 30,001 frames with none dropped, but it kept up with 25 fps only for the first ~12 minutes of video; after that it fell to 15-21 fps. That test ran on a shared laptop that was probably on battery, so it is not a clean capacity number. With the video pacing removed (fast mode, 150 s) it reached **41.4 fps**." (Section 10) |
 | **Which model?** | "**YOLOv8n** (the *nano* size of YOLO version 8, 3.16 million parameters), the **pretrained COCO weights** from Ultralytics. We did **not** train it. We fine-tuned a copy on MIO-TCD for 8 epochs (2.97 h) as an experiment, but it was **not promoted** because it was slightly worse on real CCTV." (Section 4) |
-| **Which algorithm?** | "Detection: YOLOv8n. Tracking: **ByteTrack** (Kalman filter + IoU matching + Hungarian assignment). Speed: homography to road metres + least-squares slope over 1.6 s. Congestion: occupancy proxy with hysteresis. Causes: **Dempster-Shafer** evidence fusion that is allowed to say 'insufficient evidence'." |
+| **Which algorithm?** | "Detection: YOLOv8n. Tracking: **ByteTrack** (Kalman filter + IoU matching + Hungarian assignment). Speed: homography to road metres + least-squares slope over the samples inside the calibrated zone. Congestion: occupancy proxy with hysteresis. Causes: **Dempster-Shafer** evidence fusion that is allowed to say 'insufficient evidence'." |
 | **How are IDs assigned?** | "ByteTrack gives each new track the next integer from a counter. ANVESH then gives every track its own **session serial** (`session-t00001`, `t00002`...). It is a *temporary label for one uninterrupted track*, not the vehicle's identity or number plate." (Section 5) |
 | **Why are ID numbers 'limited'?** | "They are not capped. The counter just keeps counting (we saw **5,552** track IDs in 20 minutes). Two things make it *look* limited: ByteTrack's ids **restart at 1** after a reset and have **gaps**, and the printed form `t00001` is only a minimum width, not a maximum. Also, a car lost for more than 30 frames (1.2 s) comes back with a **new** ID, so the number of IDs is **not** the number of cars." |
 
@@ -276,9 +276,9 @@ A box moving 10 pixels does **not** mean a fixed distance. A camera looks along 
 
 1. **Ground point.** For each tracked box use the **bottom centre**: `(u, v) = ((x1 + x2) / 2, y2)`. The box centre floats above the road; the bottom edge is where the tyres touch the ground. Boxes touching the frame edge are discarded (a clipped bottom edge is not the ground).
 2. **Homography.** A 3x3 matrix `H`, fitted once per camera by `cv2.findHomography` (least squares) from 10 known road points (lane-marking dashes), maps pixels to metres.
-3. **Window.** Take the track's last **1.6 s** of ground points (needs at least **6 samples** spanning at least **0.8 s**; at 25 fps a full window is about 40 samples).
-4. **Least-squares slope.** Fit a straight line of position against time for each axis; the slopes `vx, vy` are the velocity in m/s.
-5. **Convert** to km/h and **smooth** with an exponential average (alpha 0.5).
+3. **Window.** Take the track's latest ground points **inside the calibrated speed zone only** (up to 1.6 s back; no time gap above 0.3 s, no clipped boxes, no impossible jump). Needs at least **8 samples** spanning at least **0.4 s**. At motorway speed the zone is only ~20 m long, so a fast vehicle gives a window of about 0.5-0.7 s (13-17 samples).
+4. **Least-squares slope.** Fit a straight line of position against time for each axis; isolated outlier samples (more than 3 robust sigmas, at least 0.25 m, from the line) are removed and the fit repeated. The slopes `vx, vy` are the velocity in m/s.
+5. **Convert** to km/h. **No extra smoothing** (the fit already averages; extra smoothing would hide real braking). If the error band is wider than 10 km/h the number is **withheld** ('too imprecise').
 
 $$
 (x,\,y,\,w)^{T}=H\,(u,\,v,\,1)^{T},\qquad X=\frac{x}{w},\quad Y=\frac{y}{w}
@@ -303,7 +303,7 @@ Symbols: `u, v` pixel column/row; `H` the 3x3 calibration matrix; `X, Y` metres 
 
 ### 6.3 Worked example (illustrative numbers, not a recording)
 
-A car's ground points projected to the road at t = 0, 0.4, 0.8, 1.2, 1.6 s give Y = 10, 19, 28, 37, 46 m (X constant). Slope: (46 - 10) / 1.6 = **22.5 m/s**. Speed = 22.5 x 3.6 = **81 km/h**. Using the pixel movement instead of `H` would give a wrong answer that changes with distance from the camera.
+A car's ground points projected to the road at t = 0, 0.1, 0.2, 0.3, 0.4 s give Y = 6.0, 8.5, 11.0, 13.5, 16.0 m (X constant). Slope: (16.0 - 6.0) / 0.4 = **25 m/s**. Speed = 25 x 3.6 = **90 km/h**. Using the pixel movement instead of `H` would give a wrong answer that changes with distance from the camera.
 
 
 ### 6.4 Why it is approximate, and when it fails
@@ -312,13 +312,13 @@ A car's ground points projected to the road at t = 0, 0.4, 0.8, 1.2, 1.6 s give 
 
 | Reason | Effect |
 |---|---|
-| The **scale is assumed**: UK lane-marking standard (2 m dash + 7 m gap = 9 m pitch, lane width 3.65 m). The road was not surveyed and its identity is unverified. | If the real pitch were 6 m, every speed would be wrong by the same factor (about 65 instead of 97 km/h). Plausibly **+/-10 % or more**, **not** included in the displayed +/- band. A homography cannot detect a uniform scale error. |
+| The **scale is assumed**: UK lane-marking standard (2 m dash + 7 m gap = 9 m pitch, lane width 3.65 m). The road was not surveyed and its identity is unverified. | If the real pitch were 6 m, every speed would be wrong by the same factor (about 63 instead of 95 km/h). Plausibly **+/-10 % or more**, **not** included in the displayed +/- band. A homography cannot detect a uniform scale error. |
 | Calibration fit: RMSE **0.094 m** (10 points); hold-out dash end points within **0.43 m** | Shows the geometry is self-consistent, not that the metric scale is right. |
 | Flat-road assumption, one homography, near-field **speed zone** only (rows >= 225) | Curves, crests, far field: unreliable; speed is shown only inside the magenta zone. |
-| Box jitter (bottom edge moves a few pixels) | Fixed by the 1.6 s fit; tracks with rms > 2.5 m or > 250 km/h are rejected; short or clipped tracks give 'measuring'. |
+| Box jitter (bottom edge moves a few pixels) | Averaged by the least-squares fit; isolated outliers are removed; tracks with rms > 2.5 m or > 250 km/h are rejected; an error band above 10 km/h is withheld; clipped or short tracks give no number. |
 | Camera moved / different angle | `H` is wrong -> all speeds wrong. Re-calibration is needed. No automatic detection of this. |
 
-> **Be honest:** **Validation:** there is **no ground-truth speed** (no radar, GPS or surveyed distance). The only check is a plausibility test: median per-track speed 97 km/h (p10 87, p90 107) on a motorway - the right order of magnitude. That is **not** an accuracy measurement. **FPS does not change the speed formula**: it uses real timestamps, so FPS only sets how many samples fall in the 1.6 s window. Without a validated calibration the system shows **no km/h at all** (image-space only).
+> **Be honest:** **Validation:** there is **no ground-truth speed** (no radar, GPS or surveyed distance), so the **absolute scale is not verified**. What *was* verified (speed audit, `docs/ANVESH_SPEED_AUDIT_FINDINGS.md`): timing is exact (constant 25.000 fps, video timestamps only); the formula and units are right; and a real defect was found and fixed - the fit window used to reach back into the *extrapolated* far field (local speed read 1.10x at rows 195-225 and 1.22x at rows 170-195 versus 1.0 in the calibrated rows), inflating displayed speeds by ~13-17 %. After the fix the median of 689 estimates is 94.9 km/h (was 111.4), the share above 112.7 km/h fell from 47 % to 6 %, and the `truck` class median is 88 km/h (UK HGV limiter ~90 km/h - plausibility, not validation). **FPS does not change the formula**: it uses real timestamps. Without a validated calibration the system shows **no km/h at all**.
 
 
 ## 7. Congestion and behaviour analysis
@@ -727,7 +727,7 @@ Per-frame cost grows with resolution (YOLO letterboxes to 640 though); a long vi
 
 **Q38. How do you calculate speed?**
 
-Bottom-centre ground point -> homography to metres -> least-squares slope of position vs time over 1.6 s -> `3.6 x sqrt(vx^2 + vy^2)` km/h, smoothed (alpha 0.5).
+Bottom-centre ground point -> homography to metres -> least-squares slope of position vs time over the latest samples inside the calibrated zone (up to 1.6 s, in practice ~0.5-0.7 s at motorway speed) -> `3.6 x sqrt(vx^2 + vy^2)` km/h, outliers removed, no extra smoothing.
 
 **Q39. Why not pixel distance / FPS?**
 
@@ -735,7 +735,7 @@ Pixel size depends on distance (0.42 m/px far vs 0.10 m/px near in our calibrati
 
 **Q40. How does FPS affect speed?**
 
-Not the formula: we use timestamps. FPS only changes the number of samples in the 1.6 s window (about 40 at 25 fps).
+Not the formula: we use timestamps. FPS only changes the number of samples in the window (about 25 per second of video at 25 fps).
 
 **Q41. Convert m/s to km/h?**
 
@@ -743,7 +743,7 @@ Multiply by 3.6 (3600 s per hour / 1000 m per km). 22.5 m/s = 81 km/h.
 
 **Q42. How accurate is it? Validated?**
 
-Not validated: no ground-truth speed. Plausibility only (median 97 km/h). Scale is assumed from lane-marking standard; error plausibly +/-10 % or more beyond the displayed band.
+Not validated: no ground-truth speed. After the audit fix the median is 94.9 km/h and trucks 88 km/h - plausibility only. Scale is assumed from lane-marking standard; error plausibly +/-10 % or more beyond the displayed band.
 
 **Q43. What if the camera angle changes?**
 
@@ -941,7 +941,7 @@ Label real frames, survey the calibration, rerun the benchmark on a plugged-in i
 | **Definition** | ANVESH turns fixed-camera video into reviewable, evidence-backed incident candidates with honest uncertainty; an officer is the final authority. Research/demo, not production. |
 | **Pipeline (one line)** | video -> frame queue(8) -> YOLOv8n -> ByteTrack -> TrackManager -> analytics (+10 s windows) -> incidents + SHA-256 evidence + audit -> API (JSON + MJPEG) -> officer screen / dashboard |
 | **Model / tracker** | **YOLOv8n** COCO-pretrained (3.16 M params, conf 0.25, imgsz 640, NMS IoU 0.7, classes 1,2,3,5,7); **ByteTrack** (buffer 30 frames, match 0.8, new-track 0.25) |
-| **Formulas** | IoU = overlap / union;  (x,y,w)=H(u,v,1), X=x/w;  v = LSQ slope over 1.6 s;  km/h = 3.6 sqrt(vx^2+vy^2);  occupancy = min(1, concurrency/20);  discount m' = r m, m'(Theta)=1-r(1-m(Theta));  Dempster K and /(1-K);  Bel=m, Pl=m+m(Theta) |
+| **Formulas** | IoU = overlap / union;  (x,y,w)=H(u,v,1), X=x/w;  v = LSQ slope over in-zone samples;  km/h = 3.6 sqrt(vx^2+vy^2);  occupancy = min(1, concurrency/20);  discount m' = r m, m'(Theta)=1-r(1-m(Theta));  Dempster K and /(1-K);  Bel=m, Pl=m+m(Theta) |
 | **IDs** | ByteTrack int counter -> session serial `SES-..-t00001`; tracklet, not vehicle; no cap; new ID if lost > 30 frames; plate number is separate |
 | **Benchmark (20 min real time)** | 30,001 frames, 0 dropped, 21.77 fps (source 25), wall 1,377.9 s, frame p50/p95 34.9/71.7 ms, peak RSS 1,745 MB. 25 fps kept ~740 s then fell behind; cause not established. Fast mode 41.4 fps (150 s). Session 7's 24.89 fps not reproduced |
 | **Tests** | 1,403 passed (9 groups); 12-check browser lifecycle; 1,381 at the previous presentation |

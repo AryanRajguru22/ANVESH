@@ -73,11 +73,11 @@ Q("9. OpenCV and video processing", [
     ("What if the video is very large or high resolution?", "Per-frame cost grows with resolution (YOLO letterboxes to 640 though); a long video only takes longer. Frames are never all held in memory (bounded queue, ~13.5 MB frame ring)."),
 ])
 Q("10. Speed estimation and formulas", [
-    ("How do you calculate speed?", "Bottom-centre ground point -> homography to metres -> least-squares slope of position vs time over 1.6 s -> `3.6 x sqrt(vx^2 + vy^2)` km/h, smoothed (alpha 0.5)."),
+    ("How do you calculate speed?", "Bottom-centre ground point -> homography to metres -> least-squares slope of position vs time over the latest samples inside the calibrated zone (up to 1.6 s, in practice ~0.5-0.7 s at motorway speed) -> `3.6 x sqrt(vx^2 + vy^2)` km/h, outliers removed, no extra smoothing."),
     ("Why not pixel distance / FPS?", "Pixel size depends on distance (0.42 m/px far vs 0.10 m/px near in our calibration), so pixels do not give metres."),
-    ("How does FPS affect speed?", "Not the formula: we use timestamps. FPS only changes the number of samples in the 1.6 s window (about 40 at 25 fps)."),
+    ("How does FPS affect speed?", "Not the formula: we use timestamps. FPS only changes the number of samples in the window (about 25 per second of video at 25 fps)."),
     ("Convert m/s to km/h?", "Multiply by 3.6 (3600 s per hour / 1000 m per km). 22.5 m/s = 81 km/h."),
-    ("How accurate is it? Validated?", "Not validated: no ground-truth speed. Plausibility only (median 97 km/h). Scale is assumed from lane-marking standard; error plausibly +/-10 % or more beyond the displayed band."),
+    ("How accurate is it? Validated?", "Not validated: no ground-truth speed. After the audit fix the median is 94.9 km/h and trucks 88 km/h - plausibility only. Scale is assumed from lane-marking standard; error plausibly +/-10 % or more beyond the displayed band."),
     ("What if the camera angle changes?", "The homography is no longer valid and all speeds are wrong until recalibrated; the system does not detect this automatically."),
 ])
 Q("11. Homography and camera calibration", [
@@ -145,7 +145,7 @@ A(TABLE(["Item", "Remember"], [
     ["**Definition**", "ANVESH turns fixed-camera video into reviewable, evidence-backed incident candidates with honest uncertainty; an officer is the final authority. Research/demo, not production."],
     ["**Pipeline (one line)**", "video -> frame queue(8) -> YOLOv8n -> ByteTrack -> TrackManager -> analytics (+10 s windows) -> incidents + SHA-256 evidence + audit -> API (JSON + MJPEG) -> officer screen / dashboard"],
     ["**Model / tracker**", "**YOLOv8n** COCO-pretrained (3.16 M params, conf 0.25, imgsz 640, NMS IoU 0.7, classes 1,2,3,5,7); **ByteTrack** (buffer 30 frames, match 0.8, new-track 0.25)"],
-    ["**Formulas**", "IoU = overlap / union;  (x,y,w)=H(u,v,1), X=x/w;  v = LSQ slope over 1.6 s;  km/h = 3.6 sqrt(vx^2+vy^2);  occupancy = min(1, concurrency/20);  discount m' = r m, m'(Theta)=1-r(1-m(Theta));  Dempster K and /(1-K);  Bel=m, Pl=m+m(Theta)"],
+    ["**Formulas**", "IoU = overlap / union;  (x,y,w)=H(u,v,1), X=x/w;  v = LSQ slope over in-zone samples;  km/h = 3.6 sqrt(vx^2+vy^2);  occupancy = min(1, concurrency/20);  discount m' = r m, m'(Theta)=1-r(1-m(Theta));  Dempster K and /(1-K);  Bel=m, Pl=m+m(Theta)"],
     ["**IDs**", "ByteTrack int counter -> session serial `SES-..-t00001`; tracklet, not vehicle; no cap; new ID if lost > 30 frames; plate number is separate"],
     ["**Benchmark (20 min real time)**", "30,001 frames, 0 dropped, 21.77 fps (source 25), wall 1,377.9 s, frame p50/p95 34.9/71.7 ms, peak RSS 1,745 MB. 25 fps kept ~740 s then fell behind; cause not established. Fast mode 41.4 fps (150 s). Session 7's 24.89 fps not reproduced"],
     ["**Tests**", "1,403 passed (9 groups); 12-check browser lifecycle; 1,381 at the previous presentation"],

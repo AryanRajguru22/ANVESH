@@ -14,7 +14,7 @@ run() {
 }
 run "app-1" tests/app/test_alerts.py tests/app/test_api.py tests/app/test_foundation.py tests/app/test_incidents.py
 run "app-2" tests/app/test_cases.py tests/app/test_registry_handoff.py tests/app/test_registry_policy.py tests/app/test_plates.py tests/app/test_plates_robustness.py
-run "app-3" tests/app/test_detectors.py tests/app/test_event_logic.py tests/app/test_session_synthetic.py tests/app/test_ingestion.py tests/app/test_live_speed.py tests/app/test_event_lifecycle.py tests/app/test_tracker_config.py
+run "app-3" tests/app/test_detectors.py tests/app/test_event_logic.py tests/app/test_session_synthetic.py tests/app/test_ingestion.py tests/app/test_live_speed.py tests/app/test_speed_accuracy.py tests/app/test_event_lifecycle.py tests/app/test_tracker_config.py
 run "app-4" tests/app/test_officer_layer.py tests/app/test_mjpeg_stream.py tests/app/test_retention.py tests/app/test_security_hardening.py tests/app/test_account_security.py
 run "streaming+training" tests/streaming tests/training
 run "perception" tests/perception

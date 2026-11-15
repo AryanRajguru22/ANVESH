@@ -364,8 +364,10 @@ class OfficerLayer:
             sp = self._speed_now
             over = self.alerts.counts.get("overspeed", 0)
             if sp:
-                value = f"{max(sp):.0f} km/h"
-                detail = f"fastest of {len(sp)} measured now" + (" (approximate)" if approximate else "")
+                srt = sorted(sp)
+                med = srt[len(srt) // 2] if len(srt) % 2 else (srt[len(srt) // 2 - 1] + srt[len(srt) // 2]) / 2
+                value = f"{med:.0f} km/h"  # the typical (median) vehicle, NOT the fastest: a maximum over N noisy readings is biased upward
+                detail = (f"1 vehicle measured now" if len(sp) == 1 else f"median of {len(sp)} measured now, range {srt[0]:.0f}-{srt[-1]:.0f}") + (" - approximate, scale not surveyed" if approximate else "")
             else:
                 value, detail = "Measuring", "speed is read inside the magenta zone on the video"
             speed_t = {"state": "bad" if over else "ok", "value": value, "detail": detail + (f" - limit {speed_limit:.0f}" if speed_limit else "") + (f" - {over} over limit" if over else "")}

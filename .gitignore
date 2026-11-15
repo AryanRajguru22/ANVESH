@@ -56,3 +56,18 @@ datasets/local_cctv/
 /models/plates/plate_v1/weights/last.pt
 /models/plates/plate_v1/*.jpg
 /models/plates/plate_v1/*.png
+
+# personal coursework files and documents built from footage of unverified licence stay on disk, never committed
+# (regenerate the handbook / panel guide with docs/viva_assets/build_handbook.py and build_guide.py; see docs/ANVESH_FINALIZATION_REPORT.md)
+/PBL-III_*
+/Project_Ledger_*
+/docs/ANVESH_COMPLETE_TECHNICAL_VIVA_HANDBOOK.*
+/docs/ANVESH_PANEL_PRESENTATION_GUIDE.*
+/docs/ANVESH_Demo_Explanation_Guide.pdf
+/docs/viva_assets/screens/
+/docs/viva_assets/figures/*.png
+/docs/viva_assets/figures/_formulas/
+/docs/viva_assets/__pycache__/
+/docs/demo_reference/
+/stitch/
+/Anvesh Demo screenshots/

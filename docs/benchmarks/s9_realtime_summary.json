@@ -1,0 +1,166 @@
+{
+ "samples": 134,
+ "sample_errors": 0,
+ "sample_interval_s": 10,
+ "states_seen": [
+  "completed",
+  "connecting",
+  "live"
+ ],
+ "sampled_wall_s": 1355.0,
+ "rss_mb": {
+  "min": 928.7,
+  "max": 1745.1,
+  "mean": 1606.32,
+  "first_quarter_mean": 1564.66,
+  "last_quarter_mean": 1588.93
+ },
+ "gpu_mem_mb_nvidia_smi_total_used": {
+  "min": 133.0,
+  "max": 177.0,
+  "mean": 176.67,
+  "first_quarter_mean": 175.67,
+  "last_quarter_mean": 177.0
+ },
+ "gpu_util_pct": {
+  "min": 0.0,
+  "max": 70.0,
+  "mean": 26.69,
+  "first_quarter_mean": 27.85,
+  "last_quarter_mean": 24.45
+ },
+ "frame_queue_depth_max_sampled": 8.0,
+ "frame_queue_high_water_max": 8.0,
+ "ring_mb_max": 13.5,
+ "live_samples_with_no_frame_progress": 0,
+ "cpu": {
+  "server_cpu_pct_of_one_core": {
+   "min": 0.0,
+   "max": 320.9,
+   "mean": 102.81,
+   "first_quarter_mean": 84.16,
+   "last_quarter_mean": 121.89
+  },
+  "system_cpu_pct_all_cores": {
+   "min": 14.2,
+   "max": 58.1,
+   "mean": 32.9,
+   "first_quarter_mean": 28.2,
+   "last_quarter_mean": 42.68
+  },
+  "logical_cores": 16
+ },
+ "session_id": "SES-BAF19E34D3",
+ "final_session_record": {
+  "state": "completed",
+  "frames_processed": 30001,
+  "frames_dropped": 0,
+  "processing_fps": 21.772572362398243,
+  "wall_elapsed_s": 1377.9262964725494,
+  "stream_time_s": 1200.0,
+  "fps_nominal": 25.0,
+  "latency": {
+   "detect_track": {
+    "count": 30001,
+    "mean_ms": 29.985071657611016,
+    "p50_ms": 28.14684999975725,
+    "p95_ms": 52.37504499955319,
+    "p99_ms": 70.94128600053398,
+    "max_ms": 4000.262599999587,
+    "percentiles_exact": false
+   },
+   "store_update": {
+    "count": 30001,
+    "mean_ms": 0.15757179427209814,
+    "p50_ms": 0.13869999975213432,
+    "p95_ms": 0.29790500007038634,
+    "p99_ms": 0.42510900003435237,
+    "max_ms": 3.055300000596617,
+    "percentiles_exact": false
+   },
+   "frame_processing": {
+    "count": 30001,
+    "mean_ms": 38.824309226359894,
+    "p50_ms": 34.87589999986085,
+    "p95_ms": 71.745875000488,
+    "p99_ms": 105.58141900056393,
+    "max_ms": 4063.2071999998516,
+    "percentiles_exact": false
+   },
+   "frame_end_to_end": {
+    "count": 30001,
+    "mean_ms": 227.97539618346204,
+    "p50_ms": 43.29874999984895,
+    "p95_ms": 663.8947050003479,
+    "p99_ms": 820.712566000029,
+    "max_ms": 4063.278900000114,
+    "percentiles_exact": false
+   },
+   "decode": {
+    "count": 30001,
+    "mean_ms": 0.9930081863964485,
+    "p50_ms": 0.83474999973987,
+    "p95_ms": 1.4566049999757524,
+    "p99_ms": 2.3932290003631307,
+    "max_ms": 104.81129999971017,
+    "percentiles_exact": false
+   },
+   "windowing": {
+    "count": 121,
+    "mean_ms": 43.21659090913249,
+    "p50_ms": 38.00299999966228,
+    "p95_ms": 75.24879999982659,
+    "p99_ms": 163.8642799998704,
+    "max_ms": 271.16599999953905,
+    "percentiles_exact": true
+   },
+   "window_emit_after_trigger_frame": {
+    "count": 120,
+    "mean_ms": 272.86245916666303,
+    "p50_ms": 82.70760000004884,
+    "p95_ms": 726.6465150001294,
+    "p99_ms": 837.5812029998816,
+    "max_ms": 876.1082999999417,
+    "percentiles_exact": true
+   }
+  },
+  "queues": {
+   "frames": {
+    "name": "frames",
+    "capacity": 8,
+    "policy": "block",
+    "put": 30001,
+    "dropped": 0,
+    "high_water": 8,
+    "depth": 0
+   },
+   "windows": {
+    "name": "windows",
+    "capacity": 16,
+    "policy": "block",
+    "put": 121,
+    "dropped": 0,
+    "high_water": 2,
+    "depth": 0
+   }
+  },
+  "unique_tracks_total": 5552,
+  "events_emitted": 18,
+  "source_health": {
+   "state": "connected",
+   "epoch": 0,
+   "frames_read": 30002,
+   "reconnects": 0,
+   "source_gap_frames": 0,
+   "measured_fps": 0.0,
+   "interval_jitter_s": 0.0,
+   "last_error": "",
+   "corrupt_frames": 0
+  },
+  "engine_health": "live",
+  "windows_emitted": 121,
+  "errors": [],
+  "tracker": "D:\\ANVESH\\models\\yolov8n.pt"
+ },
+ "incidents_total": 18
+}

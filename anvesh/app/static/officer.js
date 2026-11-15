@@ -118,7 +118,18 @@
     show("chooser");
   }
 
+  // Starting a source stops every other running one and then starts this one. Clicks that arrive while that is in progress are coalesced
+  // (the LAST choice wins) and run one after another, so interleaved start/stop calls can never leave two sessions running.
+  const startQueue = { busy: false, want: null };
   async function begin(camId) {
+    startQueue.want = camId;
+    if (startQueue.busy) return;
+    startQueue.busy = true;
+    try {
+      while (startQueue.want !== null) { const id = startQueue.want; startQueue.want = null; await beginOne(id); }
+    } finally { startQueue.busy = false; }
+  }
+  async function beginOne(camId) {
     show("live"); buildSourceBar(camId);
     setMsg("Starting… loading the detector (a few seconds the first time)");
     $("endCard").hidden = true;

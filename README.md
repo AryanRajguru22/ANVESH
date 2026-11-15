@@ -3,15 +3,15 @@
 Corridor-level, multi-camera traffic congestion-cause reasoning system.
 Implementation authority: [`docs/ANVESH_V1_IMPLEMENTATION_BLUEPRINT.md`](docs/ANVESH_V1_IMPLEMENTATION_BLUEPRINT.md).
 
-**Current status: M0 -> M6.5 complete.** Single- and two-camera perception,
-world alignment, corridor-state assembly, cross-camera evidence fusion,
-propagation + feedback, a controlled synthetic evaluation harness, and a
-real-world validation/hardening checkpoint (see
-[`docs/M6_5_REAL_WORLD_VALIDATION.md`](docs/M6_5_REAL_WORLD_VALIDATION.md))
-are implemented. This is a research prototype: candidate-cause ranking
-only, never causal inference, with no validated real-world accuracy claim.
-The Part 5 data contracts (schema only) are frozen in
-[`anvesh/storage/schemas.py`](anvesh/storage/schemas.py).
+**Status (Session 9, 15 November 2026): a finished research / demonstration system, not a production or enforcement system.**
+It combines a corridor-level congestion-cause reasoning core (single- and two-camera perception, world alignment, evidence fusion,
+candidate-cause ranking that is allowed to abstain, propagation, feedback, evaluation harness) with a streaming single-camera
+world model and an operational MVP (HTTP API, officer screen, full dashboard, evidence, cases, audit). It is **implemented and
+tested**; it is **not validated against ground truth** for speed, congestion, stop incidents, wrong-way, collision or cause
+ranking, and no accuracy figure is claimed for them. Detector and tracker were scored on CityFlow / MIO-TCD (see the reports).
+Candidate-cause ranking only, never causal inference. The Part 5 data contracts (schema only) are frozen in
+[`anvesh/storage/schemas.py`](anvesh/storage/schemas.py). Final status, benchmark and limitations:
+[`docs/ANVESH_FINALIZATION_REPORT.md`](docs/ANVESH_FINALIZATION_REPORT.md).
 
 **Milestone M-A (streaming single-camera world model):** see
 [`docs/M-A_FOUNDATION_REPORT.md`](docs/M-A_FOUNDATION_REPORT.md) for what is
@@ -50,6 +50,33 @@ test scenes are labelled **SIMULATED**; plates are read only when a vehicle is w
 officer to confirm. This is a research/demonstration build, not an enforcement system. Session history and the measured results:
 [`docs/ANVESH_SESSION8_REPORT.md`](docs/ANVESH_SESSION8_REPORT.md).
 
+## Configuration (environment variables; nothing secret has a default)
+
+| Variable | Meaning (default) |
+|---|---|
+| `ANVESH_DATA_DIR` | application data (SQLite, evidence, audit) (`outputs\app`) |
+| `ANVESH_HOST` / `ANVESH_PORT` | listen address (`127.0.0.1` / `8750`; the demo uses 8760) |
+| `ANVESH_MODEL` / `ANVESH_FINETUNED_MODEL` | detector weights (`models\yolov8n.pt`); the fine-tuned model is opt-in and **not promoted** |
+| `ANVESH_SECURE_COOKIES` | `1` behind HTTPS |
+| `ANVESH_SESSION_IDLE_S`, `ANVESH_DISTINCT_APPROVER` | sign-in idle timeout; four-eyes approval |
+| `ANVESH_ALERT_WEBHOOK_URL`, `ANVESH_SMTP_*`, `ANVESH_REGISTRY_*`, `ANVESH_CHALLAN_*` | optional integrations; unset = "not connected" (none ships with an endpoint) |
+
+Model weights (`models\yolov8n.pt`, `models\plates\...`) and videos (`demo.mp4`) are not in the repository. `demo.mp4`'s origin and licence are unverified
+(see `demo/SOURCE.md`): it is never committed. Browser checks in `demo/tools` and `docs/viva_assets/capture_screens.py` need
+`pip install playwright` and Chrome (system Python); they are tools, not application dependencies.
+
+## Documentation
+
+- `docs/ANVESH_FINALIZATION_REPORT.md` - final state, tests, benchmark, limitations (start here).
+- `docs/ANVESH_APP_GUIDE.md`, `docs/ANVESH_RELEASE_READINESS.md`, `docs/ANVESH_SESSION6_REPORT.md` ... `SESSION9`, `demo/README.md` (demo runbook).
+- The technical viva handbook (`ANVESH_COMPLETE_TECHNICAL_VIVA_HANDBOOK.pdf/.docx`, 22 chapters) and the panel guide
+  (`ANVESH_PANEL_PRESENTATION_GUIDE.pdf/.docx`) are built from `docs/viva_assets/` and are **not committed** because they embed frames of a video
+  whose licence is unverified. Rebuild them locally: `python docs\viva_assets\capture_screens.py --base http://127.0.0.1:8760` (with the demo
+  running, `--one-click`), then `python docs\viva_assets\build_handbook.py` and `python docs\viva_assets\build_guide.py` (system Python with
+  reportlab, python-docx and matplotlib).
+- Benchmarks: `docs/benchmarks/` (raw 10 s samples and summaries). Measure again with `demo/tools/monitor_run.py`, `demo/tools/sample_cpu.py`,
+  `demo/tools/summarize_realtime.py`.
+
 ## Requirements
 
 - Python 3.11+ (the evaluated Windows / CUDA 13.0 environment is recorded in
@@ -86,7 +113,7 @@ anvesh
 
 ```bash
 pytest                                                  # core tests (one process over the whole suite can be killed by the memory guard)
-bash demo/tools/run_test_groups.sh demo/runs/tests.log  # the whole suite as 9 sequential processes (1,403 passed at the Session 8 final run: 1,381 in the original groups + 22 in the officer-layer and stream test files, now part of group app-4)
+bash demo/tools/run_test_groups.sh demo/runs/tests.log  # the whole suite as 9 sequential processes (1,403 passed at the Session 9 final run; one timing-bounded ingestion test is flaky when the machine is slow, see the finalization report)
 ```
 
 ## M-A evaluation scripts (need the CityFlow dataset at `E:\traffic dataset`, `models/yolov8n.pt`, a GPU)
@@ -114,8 +141,13 @@ These are defaults or opt-ins a user of the streaming API needs to know about. N
 ## Layout
 
 ```
-anvesh/            application package (config, logging, entry point, module boundaries)
-configs/           TOML configuration (default.toml)
-tests/             pytest suite
-pyproject.toml     project + dependency metadata
+anvesh/perception, world, safety   detection, tracking, traffic state, calibration, stop episodes
+anvesh/evidence, fusion, hypotheses, propagation, feedback   evidence, Dempster-Shafer fusion, ranked candidate causes, shockwave, feedback
+anvesh/streaming   streaming engine, bounded queues, windows, latency recorder, RTSP source
+anvesh/app         HTTP API + dashboard + officer screen (static/), sessions, incidents, evidence, cases, audit, plates
+anvesh/training    detector-evaluation and benchmark helpers (data and weights are not committed)
+scripts/           run_demo.py, run_app.py, evaluation and diagnostic scripts
+demo/              demo runbook, camera config, test/benchmark/browser tools (demo/tools)
+docs/              reports, benchmarks/, viva_assets/ (handbook and guide build scripts)
+tests/             pytest suite (run it in groups: demo/tools/run_test_groups.sh)
 ```

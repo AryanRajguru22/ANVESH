@@ -1,0 +1,15 @@
+{
+ "note": "Fast-mode run (run_demo.py --fast --seconds 150, --autostart --no-simulated), measured in Session 8 on an otherwise idle machine. The raw API record was printed to the terminal, not stored; these values are transcribed from that printout. Not a real-time benchmark.",
+ "frames_processed": 3751,
+ "frames_dropped": 0,
+ "processing_fps": 41.37132436347399,
+ "wall_elapsed_s": 90.6666648387909,
+ "frame_processing_p50_ms": 13.398999999935768,
+ "frame_processing_p95_ms": 31.992899999977453,
+ "frame_processing_p99_ms": 44.847050000043964,
+ "detect_track_p50_ms": 10.507700000289333,
+ "detect_track_p95_ms": 23.582649999752903,
+ "end_to_end_p50_ms": 144.7320000002037,
+ "end_to_end_p95_ms": 276.0483000001841,
+ "queue": "frames capacity 8, policy block, high water 8"
+}

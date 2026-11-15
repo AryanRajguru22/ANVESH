@@ -10,10 +10,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _api import apis  # noqa: E402
 
 
+_PROC = {}
+
+
 def rss_mb(pid):
     try:
         import psutil
-        p = psutil.Process(pid)
+        p = _PROC.setdefault(pid, psutil.Process(pid))  # one Process object per pid: cpu_percent needs the previous call
         return round((p.memory_info().rss + sum(c.memory_info().rss for c in p.children(recursive=True))) / 2**20, 1), round(p.cpu_percent(interval=None), 1)
     except Exception:
         return None, None

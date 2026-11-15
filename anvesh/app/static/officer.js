@@ -153,12 +153,29 @@
   }
 
   // ------------------------------------------------------------------ live view
+  const STATE_PILL = {
+    live: ["LIVE", "ok"], starting: ["STARTING", "warn"], connecting: ["CONNECTING", "warn"], reconnecting: ["RECONNECTING", "warn"], stalled: ["STALLED", "bad"],
+    paused: ["PAUSED", "warn"], completed: ["FINISHED", "off"], stopped: ["STOPPED", "off"], failed: ["FAILED", "bad"], interrupted: ["INTERRUPTED", "bad"],
+  };
+  // One line above the video: what is running (state, camera, session id) and whether the picture is recorded, simulated or a live feed.
+  function setStatus(kind, label, st) {
+    const box = $("statusline"); box.textContent = "";
+    const pill = STATE_PILL[kind] || [label || kind.toUpperCase(), "off"];
+    box.append(el("span", { class: "pill-state " + pill[1] }, el("i", { class: "dot" }), label || pill[0]));
+    if (st) {
+      box.append(el("b", { class: "sl-cam", text: st.camera_name || st.camera_id }));
+      const src = st.simulated ? "SIMULATED scene" : (st.data_class === "demo" ? "recorded footage, processed live" : "");
+      if (src) box.append(el("span", { class: "sl-src" + (st.simulated ? " sim" : ""), text: src }));
+      box.append(el("span", { class: "sl-id", title: "Session identifier", text: st.session_id }));
+    }
+  }
   function setMsg(text) { const m = $("stageMsg"); m.hidden = !text; m.textContent = text || ""; }
 
   function attach(camId, sid) {
     S.cam = camId; S.sid = sid; S.ending = false; S.last = null; S.bad = 0;
     show("live"); buildSourceBar(camId);
     $("endCard").hidden = true;
+    S.retry = 0;
     $("video").src = API + "/sessions/" + sid + "/stream.mjpg?ts=" + Date.now();
     setMsg("Starting… loading the detector (a few seconds the first time)");
     $("tiles").textContent = ""; $("alerts").textContent = "";
@@ -168,17 +185,28 @@
     poll();
     S.timer = setInterval(poll, 1000);
   }
+  $("video").addEventListener("error", () => {
+    // fires when the stream connection drops; if the session is still running, reconnect (a few times) instead of freezing on the last frame
+    if (!S.sid || S.ending || !$("video").getAttribute("src") || (S.retry || 0) >= 3) return;
+    S.retry = (S.retry || 0) + 1;
+    const sid = S.sid;
+    setTimeout(() => { if (S.sid === sid && !S.ending) $("video").src = API + "/sessions/" + sid + "/stream.mjpg?ts=" + Date.now(); }, 1500);
+  });
   function stopPolling() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
 
   async function poll() {
     if (!S.sid) return;
+    const sid = S.sid;   // the session this request is for; a late answer for an old session is dropped, never shown
     let st;
-    try { st = await api("GET", "/sessions/" + S.sid + "/officer"); S.bad = 0; } catch (e) {
+    try { st = await api("GET", "/sessions/" + sid + "/officer"); } catch (e) {
+      if (sid !== S.sid) return;
       if (e.status === 401) { stopPolling(); toast("Signed out - reload the page"); return; }
       // the session object is gone (server restarted): fall back to the stored row once
-      if (++S.bad >= 3) { stopPolling(); setMsg("Lost the connection to the session."); }
+      if (++S.bad >= 3) { stopPolling(); setMsg("Lost the connection to the session."); setStatus("lost", "CONNECTION LOST"); }
       return;
     }
+    if (sid !== S.sid) return;
+    S.bad = 0;
     S.last = st;
     render(st);
   }
@@ -187,7 +215,9 @@
     const live = ACTIVE.includes(st.state);
     if (st.state === "starting" || st.state === "connecting" || (live && !st.fps && !st.t)) setMsg("Starting… loading the detector (a few seconds the first time)");
     else if (st.state === "reconnecting" || st.state === "stalled") setMsg("Waiting for the video…");
+    else if (st.state === "paused") setMsg("Paused - press Resume to continue");
     else setMsg("");
+    setStatus(st.state, null, st);
     $("clock").textContent = mmss(st.t) + (st.duration_s ? " / " + mmss(st.duration_s) : "");
     $("bar").style.width = Math.round((st.progress || 0) * 100) + "%";
     S.paused = st.state === "paused";
@@ -199,9 +229,10 @@
     if (TERMINAL.includes(st.state) && !S.ending) {
       S.ending = true; stopPolling();
       const n = Object.values(st.alert_counts || {}).reduce((a, b) => a + b, 0);
-      $("endTitle").textContent = st.state === "failed" ? "The video could not be processed" : "Finished";
+      const TITLE = { failed: "The video could not be processed", stopped: "Stopped", interrupted: "Processing was interrupted" };
+      $("endTitle").textContent = TITLE[st.state] || "Finished";
       $("endText").textContent = st.state === "failed" ? (st.errors && st.errors[0]) || "Something went wrong." :
-        `${st.vehicles_total} vehicles were followed and ${n} alert${n === 1 ? "" : "s"} raised. The alerts stay on the right.`;
+        `${st.vehicles_total} vehicles were followed and ${n} alert${n === 1 ? "" : "s"} raised` + (st.state === "completed" ? "" : " before it ended") + ". The alerts stay on the side panel. The picture above is the last frame processed.";
       $("endCard").hidden = false;
     }
   }
@@ -254,6 +285,7 @@
     try { await api("POST", "/sessions/" + S.sid + "/stop"); } catch (e) { /* ended already */ }
     $("video").removeAttribute("src");
     S.sid = null;
+    $("statusline").textContent = "";
   }
   $("pauseBtn").addEventListener("click", async () => {
     if (!S.sid) return;

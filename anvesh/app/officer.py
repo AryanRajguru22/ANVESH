@@ -350,7 +350,13 @@ class OfficerLayer:
         ww_now, acc_now = bool(self.alerts.active(t, ("wrong_way",))), bool(self.alerts.active(t, ("possible_collision",)))
         # lanes
         if self.lanes:
-            lanes_t = {"state": "ok", "value": f"{len(self.lanes.lanes)} lanes", "detail": "; ".join(f"{k}: {v}" for k, v in sorted(self._lane_counts.items())) or "no vehicle in a lane right now"}
+            counts = {k: v for k, v in self._lane_counts.items() if v}
+            if counts:
+                busiest = max(sorted(counts), key=counts.get)
+                lane_detail = f"{sum(counts.values())} vehicles in lanes now; busiest {busiest} ({counts[busiest]})"
+            else:
+                lane_detail = "no vehicle in a lane right now"
+            lanes_t = {"state": "ok", "value": f"{len(self.lanes.lanes)} lanes", "detail": lane_detail}
         else:
             lanes_t = {"state": "off", "value": "Not set up", "detail": "Lane areas are not drawn for this camera."}
         # speed

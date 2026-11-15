@@ -128,3 +128,16 @@ main.lv { padding: 8px 14px 24px; }
 .lv-secbody { padding: 4px 12px 12px; }
 @media (max-width: 1100px) { .lv-work { grid-template-columns: minmax(0, 1fr); } .lv-frame { max-height: 70vh; } }
 @media (max-width: 860px) { main.lv { padding: 8px 10px 24px; } .lv-lbl { flex: 1 1 100%; } .lv-lbl .lv-sel { flex: 1 1 auto; max-width: none; width: 100%; } .warnbar .wb-short { display: none; } }
+
+/* phones: the navigation, status chips and the standing notice become one scrollable line each, so the live video starts near the top */
+@media (max-width: 600px) {
+  nav.side { flex-wrap: nowrap; overflow-x: auto; padding: 4px 8px; gap: 2px; }
+  nav.side .brand { padding: 0 8px 0 2px; font-size: 15px; flex: none; }
+  nav.side a { flex: none; white-space: nowrap; padding: 6px 9px; }
+  .topbar { gap: 4px 8px; }
+  #envbar { display: flex; flex-wrap: nowrap; overflow-x: auto; max-width: 100%; gap: 4px; padding-bottom: 2px; } #envbar .chip { flex: none; } #envbar .row { flex-wrap: nowrap; }
+  .topbar .who { font-size: 12px; gap: 6px; }
+  .warnbar { margin: 2px 0 4px; }
+  .lv-head { padding: 4px 8px; gap: 4px 8px; } .lv-lbl { flex: 1 1 100%; } .lv-lbl .lv-sel, .lv-sel-ses { max-width: none; width: 100%; }
+  .lv-bar { padding: 4px 8px; gap: 6px; }
+}

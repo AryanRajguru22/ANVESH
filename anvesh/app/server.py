@@ -133,6 +133,20 @@ class Request:
             raise ApiError(403, "forbidden", f"your role ({self.user.role}) lacks the '{permission}' permission")
 
 
+class _QuietThreadingServer(ThreadingHTTPServer):
+    """A browser tab that closes mid-request (or mid-stream) is normal, not an error: a vanished peer is logged at debug level only.
+    Anything else is logged with its traceback through `logging` instead of being printed to stderr."""
+
+    def handle_error(self, request, client_address):
+        import sys
+
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionError, TimeoutError)):
+            log.debug("client %s went away: %s", client_address[0], type(exc).__name__)
+        else:
+            log.exception("unhandled error serving %s", client_address[0])
+
+
 class AppServer:
     def __init__(self, services, sessions: SessionManager = None, host: str = None, port: int = None,
                  request_timeout_s: float = DEFAULT_REQUEST_TIMEOUT_S) -> None:
@@ -181,7 +195,7 @@ class AppServer:
             def do_PUT(self):
                 server.dispatch(self, "PUT")
 
-        self._httpd = ThreadingHTTPServer((self.host, self.port), Handler)
+        self._httpd = _QuietThreadingServer((self.host, self.port), Handler)
         self._httpd.daemon_threads = True
         self.port = self._httpd.server_address[1]
         self._thread = threading.Thread(target=self._httpd.serve_forever, name="anvesh-http", daemon=True)

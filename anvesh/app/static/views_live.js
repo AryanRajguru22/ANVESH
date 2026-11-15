@@ -12,7 +12,7 @@
   const POLL_MS = 2000;
 
   const SPEED_STATUS = { outside_speed_zone: "outside speed zone", insufficient_history: "measuring...", no_metric_calibration: "no calibration", rejected_unstable: "unstable track", rejected_implausible: "implausible", clipped_at_frame_edge: "at frame edge" };
-  const PLATE_STATUS = { unreadable_too_small: ["unreadable (too small)", "bad"], marginal: ["marginal - needs review", "warn"], candidate_size: ["size ok - OCR not available", "info"] };
+  const PLATE_STATUS = { unreadable_too_small: ["unreadable (too small)", "bad"], marginal: ["marginal - needs review", "warn"], candidate_size: ["size may allow a read", "info"] };
 
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -32,7 +32,7 @@
             h("td", {}, r.speed_kmh !== null && r.speed_kmh !== undefined ? `${r.speed_kmh.toFixed(0)} km/h ± ${r.speed_error_kmh}${rt.geometry && rt.geometry.approximate ? " ~approx" : ""}` : h("span", { class: "muted" }, SPEED_STATUS[r.speed_status] || r.speed_status)),
             h("td", {}, r.est_plate_px), h("td", {}, A.chip(ps[0], ps[1])));
         })))),
-      h("div", { class: "muted small" }, "Plate size is a HEURISTIC (about 27% of the vehicle box width). No plate detector or OCR engine is installed, so no plate is ever read automatically; officers enter plates manually on the incident."));
+      h("div", { class: "muted small" }, "Plate size is a HEURISTIC (about 27% of the vehicle box width). The live plate reader (shown on the officer screen) tries a read only on real-footage vehicles at least ~110 px wide, and every read is a candidate an officer must verify. OCR on saved incident evidence is a separate step and is not connected here; plates on incidents are entered by an officer."));
   }
 
   // ---------------------------------------------------------------- route

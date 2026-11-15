@@ -287,3 +287,16 @@ def test_without_any_direction_the_jam_is_reported_but_no_cause_is_named():
         _feed(hist, t, {f"d-t{i}": (500 - 80 * i, 250.0) for i in range(4)})
         st = an.update(t)
     assert st["active"] and st["cause_track"] is None and "cannot be told" in st["text"]
+
+
+def test_lane_tile_summarises_instead_of_listing_every_lane(services):
+    r = _run(services, "show_accident", {"lanes": _lanes()})
+    o = r.officer
+    o._lane_counts = {"L1": 3, "L2": 1, "L3": 0}
+    tile = {t["key"]: t for t in o.tiles(0.0, {"active": False}, None, False, False, [])}["lanes"]
+    assert tile["state"] == "ok" and tile["value"].endswith("lanes")
+    assert tile["detail"] == "4 vehicles in lanes now; busiest L1 (3)", tile["detail"]
+    o._lane_counts = {"L1": 0, "L2": 0}
+    tile = {t["key"]: t for t in o.tiles(0.0, {"active": False}, None, False, False, [])}["lanes"]
+    assert tile["detail"] == "no vehicle in a lane right now"
+

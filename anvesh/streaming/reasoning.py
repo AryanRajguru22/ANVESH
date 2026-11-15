@@ -31,7 +31,7 @@ import dataclasses
 import enum
 from dataclasses import dataclass
 
-from anvesh.perception.schema_conversion import motion_space_for
+from anvesh.perception.schema_conversion import geometry_validity_for, motion_space_for
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.pipeline import CameraWindowInput, run_corridor_window
 from anvesh.safety.stop_episodes import build_stop_event
@@ -115,7 +115,14 @@ class WindowReasoner:
                         f"{snapshot.silent_s:.1f}s silent, coverage {snapshot.coverage:.2f}"),
             )
 
-        advance = (not snapshot.degraded) or snapshot.coverage >= self._min_update_coverage
+        # Hardening D: hysteresis advances only on a window that was really observed. Completeness
+        # is the worse of time coverage and frame completeness, so uniform frame loss (no long
+        # silence, coverage 1.0) can no longer advance it. A window is also treated as degraded when
+        # it is materially incomplete without any loss having been reported (e.g. a declared fps the
+        # source does not actually deliver).
+        completeness = snapshot.observation_completeness
+        advance = completeness >= self._min_update_coverage
+        materially_incomplete = completeness < self._min_update_coverage
         tracker = self._tracker if advance else copy.deepcopy(self._tracker)
         tracks = list(snapshot.tracks)
         # The space is a property of the CAMERA'S GEOMETRY, identical to what
@@ -125,21 +132,23 @@ class WindowReasoner:
         aggregation = aggregate_traffic_state(
             self.camera_id, snapshot.start, snapshot.end, tracks, motion_space, tracker,
             segment_length_m=self._segment_length_m, max_capacity_vehicles=self._max_capacity,
+            geometry_validity=geometry_validity_for(self._profile),
         )
         camera_input = CameraWindowInput(
-            camera_id=self.camera_id, role=self._role, aggregation=aggregation, tracks=tracks
+            camera_id=self.camera_id, role=self._role, aggregation=aggregation, tracks=tracks,
+            observation_completeness=completeness,
         )
         result = run_corridor_window(
             snapshot.window, (camera_input,),
             stop_episodes=views if snapshot.stop_episodes is not None else None, **self._kwargs,
         )
-        if not snapshot.degraded:
+        if not snapshot.degraded and not materially_incomplete:
             return WindowAnalysis(
                 snapshot=snapshot, aggregation=aggregation, result=result, degraded=False,
                 stop_episodes=views, stop_events=tuple(result.safety_events),
             )
         reason = (f"{snapshot.dropped_frames} frames lost, {snapshot.silent_s:.1f}s silent, "
-                  f"coverage {snapshot.coverage:.2f}")
+                  f"coverage {snapshot.coverage:.2f}, frame completeness {snapshot.frame_completeness:.2f}")
         note = f"window degraded ({reason}): vehicle counts, flow and stopped-vehicle evidence are lower bounds"
         if not advance:
             note += "; congestion hysteresis was NOT advanced by this window"

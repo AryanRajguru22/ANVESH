@@ -52,7 +52,8 @@ def _window_inputs(tracks, congested=True):
     tracker = CongestionStateTracker()
     last = None
     for _ in range(3):  # settle the congestion hysteresis deterministically
-        last = aggregate_traffic_state(CAM, *WINDOW, tracks, MotionSpace.WORLD, tracker, max_capacity_vehicles=len(tracks) + 1 if congested else 1000)
+        last = aggregate_traffic_state(CAM, *WINDOW, tracks, MotionSpace.WORLD, tracker, max_capacity_vehicles=len(tracks) + 1 if congested else 1000,
+                                       geometry_validity=GeometryValidity.WORLD_VALIDATED)
     return last
 
 
@@ -161,9 +162,40 @@ def test_traffic_state_availability_round_trips_through_storage():
     ts = aggregation.traffic_state
     restored = storage_db._traffic_state_from_dict(storage_db._traffic_state_to_dict(ts))
     assert restored.mean_speed_available is False and ts.mean_speed_available is False
-    legacy = storage_db._traffic_state_to_dict(ts)
-    legacy.pop("mean_speed_available")  # pre-1.1.0 rows keep their meaning
-    assert storage_db._traffic_state_from_dict(legacy).mean_speed_available is True
+
+
+def test_legacy_row_without_the_flag_loads_with_speed_unavailable():
+    # CHANGED EXPECTATION (hardening B1): this used to assert `True` ("pre-1.1.0 rows keep their
+    # meaning"). A legacy row cannot say whether its mean_speed was measured (empty windows stored a
+    # 0.0 placeholder), so a missing flag now fails closed.
+    for tracks in ([_world_track(i, available=False) for i in range(4)], [_world_track(i) for i in range(4)], []):
+        _, aggregation = _evidence(tracks)
+        legacy = storage_db._traffic_state_to_dict(aggregation.traffic_state)
+        legacy.pop("mean_speed_available")
+        legacy["schema_version"] = "1.0.0"
+        restored = storage_db._traffic_state_from_dict(legacy)
+        assert restored.mean_speed_available is False
+        assert restored.measured_mean_speed() is None
+        assert restored.schema_version == "1.0.0"  # still identifiable as legacy
+
+
+def test_legacy_empty_window_zero_is_not_a_measured_zero():
+    legacy = {"camera_id": "camL", "window_start": 0.0, "window_end": 10.0, "occupancy": 0.0,
+              "mean_speed": {"value": 0.0, "error": 0.0}, "vehicle_count": 0, "flow_rate": 0.0, "density": 0.0,
+              "congestion_level": "free_flow", "motion_space": "image"}
+    restored = storage_db._traffic_state_from_dict(legacy)
+    assert restored.measured_mean_speed() is None
+    assert restored.mean_speed.value == 0.0  # the placeholder is kept, but never reported as a measurement
+
+
+def test_measured_mean_speed_returns_the_measurement_only_when_available():
+    _, avail = _evidence([_world_track(i, speed=6.0) for i in range(4)])
+    m = avail.traffic_state.measured_mean_speed()
+    assert m is not None and m.value == pytest.approx(6.0)
+    _, unavail = _evidence([_world_track(i, available=False) for i in range(4)])
+    assert unavail.traffic_state.measured_mean_speed() is None
+    restored = storage_db._traffic_state_from_dict(storage_db._traffic_state_to_dict(avail.traffic_state))
+    assert restored.measured_mean_speed().value == pytest.approx(6.0)  # a post-1.1.0 row keeps its flag
 
 
 def test_reliability_calibration_factor_reflects_speed_coverage():
@@ -334,3 +366,17 @@ def test_partial_speed_coverage_scales_the_absence_evidence_and_never_reaches_hi
         else:
             assert top.confidence_tier == ConfidenceTier.HIGH  # a fully searched window is unaffected
     assert beliefs[18] > beliefs[13] > beliefs[11] > beliefs[9]  # strictly weaker as less of the road was searched
+
+
+def test_demo_speed_cells_never_print_a_placeholder_as_a_speed():
+    import importlib.util
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    for name in ("run_corridor_state_demo", "run_real_world_validation"):
+        spec = importlib.util.spec_from_file_location(name, root / "scripts" / f"{name}.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _, unavailable = _evidence([_world_track(i, available=False) for i in range(3)])
+        _, measured = _evidence([_world_track(i, speed=6.0) for i in range(3)])
+        assert mod._speed_cell(unavailable.traffic_state) == "n/a"
+        assert mod._speed_cell(measured.traffic_state) == "6.0"

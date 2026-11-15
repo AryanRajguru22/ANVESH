@@ -44,7 +44,8 @@ def _track(track_id, first_seen, last_seen, speed_value, motion_space=MotionSpac
 
 def _build(tracks, motion_space=MotionSpace.WORLD, camera_role=CameraRole.DOWNSTREAM, reliability=0.9,
            thresholds=None):
-    aggregation = aggregate_traffic_state("cam-A", *WINDOW, tracks, motion_space, CongestionStateTracker())
+    aggregation = aggregate_traffic_state("cam-A", *WINDOW, tracks, motion_space, CongestionStateTracker(),
+                                          geometry_validity=GeometryValidity.WORLD_VALIDATED if motion_space == MotionSpace.WORLD else GeometryValidity.IMAGE)
     return build_evidence_for_camera("cam-A", WINDOW, camera_role, aggregation, tracks, reliability,
                                      thresholds=thresholds)
 

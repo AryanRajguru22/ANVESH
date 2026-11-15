@@ -39,7 +39,8 @@ class SourceHealth:
     """Point-in-time health of a frame source (any kind).
 
     `state`: "idle" (not started) | "connected" | "reconnecting" | "ended"
-    (clean EOF) | "stopped" (closed by the owner) | "failed".
+    (the source stopped delivering frames; for a recorded file `last_error` is set when fewer frames were decoded than the
+    container reports, i.e. the file may be truncated) | "stopped" (closed by the owner) | "failed".
     `frames_read`: frames successfully decoded and yielded.
     `source_gap_frames`: frames the source itself knows/estimates it skipped
     (inter-frame time far above nominal), NOT queue drops downstream.
@@ -56,6 +57,7 @@ class SourceHealth:
     measured_fps: float
     interval_jitter_s: float
     last_error: str = ""
+    corrupt_frames: int = 0
 
 
 class FrameSource(Protocol):
@@ -95,6 +97,7 @@ class VideoFileFrameSource:
         self._sleep = sleep
         self._state = "idle"
         self._frames_read = 0
+        self._last_error = ""
         self._stop = False
 
     @property
@@ -113,7 +116,7 @@ class VideoFileFrameSource:
     def health(self) -> SourceHealth:
         return SourceHealth(
             state=self._state, epoch=0, frames_read=self._frames_read, reconnects=0,
-            source_gap_frames=0, measured_fps=0.0, interval_jitter_s=0.0,
+            source_gap_frames=0, measured_fps=0.0, interval_jitter_s=0.0, last_error=self._last_error,
         )
 
     def close(self) -> None:
@@ -134,6 +137,8 @@ class VideoFileFrameSource:
         fps = self._require_valid_fps(capture.get(cv2.CAP_PROP_FPS))
         self._state = "connected"
         self._stop = False
+        self._last_error = ""
+        expected = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         start = self._clock()
         try:
             index = 0
@@ -142,7 +147,13 @@ class VideoFileFrameSource:
                 ok, image = capture.read()
                 decode_s = self._clock() - t_read
                 if not ok:
-                    self._state = "ended"  # clean EOF
+                    # OpenCV reports a failed read exactly like a normal end of file, so a truncated or corrupt tail looks
+                    # like a complete recording. The container's own frame count (exact for most mp4/avi, an estimate for some
+                    # containers) lets us flag a clearly short read without failing the session.
+                    self._state = "ended"
+                    if expected > 0 and self._frames_read < expected - max(2, expected // 100):
+                        self._last_error = (f"premature end of stream: decoded {self._frames_read} of {expected} frames reported by the "
+                                            "container (the file may be truncated or corrupt; the count can be an estimate for some containers)")
                     break
                 timestamp = index / fps
                 if self._realtime_factor is not None:

@@ -4,6 +4,7 @@ from anvesh.evidence.evidence_builder import EvidenceDirection, EvidenceItem
 from anvesh.fusion.ds_fusion import fuse_two_cameras, single_camera_result
 from anvesh.hypotheses.cause_model import HYPOTHESIS_IDS
 from anvesh.hypotheses.ranking import attach_ranking_to_corridor_state, build_ranking, determine_outcome
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CandidateCauseHypothesis,
     CandidateOutcome,
@@ -49,6 +50,7 @@ def _traffic_state(camera_id):
         camera_id=camera_id, window_start=0.0, window_end=10.0, occupancy=0.3,
         mean_speed=Measurement(value=8.0, error=0.5), vehicle_count=3, flow_rate=0.3, density=3.0,
         congestion_level=CongestionLevel.FREE_FLOW, motion_space=MotionSpace.WORLD,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

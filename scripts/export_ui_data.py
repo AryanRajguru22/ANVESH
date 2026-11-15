@@ -48,9 +48,10 @@ from anvesh.evidence.evidence_builder import EvidenceThresholds
 from anvesh.pipeline import CameraWindowInput, run_corridor_window
 from anvesh.perception.lane_assignment import assign_detection_lane
 from anvesh.perception.pipeline import run_m1_pipeline
-from anvesh.perception.schema_conversion import motion_space_for
+from anvesh.perception.schema_conversion import geometry_validity_for, motion_space_for
 from anvesh.perception.speed_estimation import estimate_vehicle_speed
-from anvesh.perception.tracking import ByteTrackYoloTracker
+from anvesh.perception.tracking import ByteTrackYoloTracker
+from anvesh.perception.weights import checkpoint_version_label
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.perception.visualize import VideoWriter
 from anvesh.perception.windowing import generate_windows, tracks_in_window
@@ -722,7 +723,7 @@ def real_video_limited_chain(
     try:
         m1_result = run_m1_pipeline(
             video_path=m1_video_path, camera_id=camera_id, tracker=tracker,
-            model_id=model_name, model_version="pretrained",
+            model_id=model_name, model_version=checkpoint_version_label(tracker.model_id),
             max_missed_frames=max_missed_frames,
             partial_after_missed_frames=partial_after_missed_frames,
             calibration_profile=calibration_profile,
@@ -799,6 +800,7 @@ def real_video_limited_chain(
         aggregation = aggregate_traffic_state(
             camera_id, window[0], window[1], window_tracks, motion_space, congestion_tracker,
             max_capacity_vehicles=max_capacity_vehicles,
+            geometry_validity=geometry_validity_for(calibration_profile),
         )
         camera_input = CameraWindowInput(camera_id=camera_id, role=CameraRole.UPSTREAM, aggregation=aggregation, tracks=window_tracks)
         result = run_corridor_window(window, (camera_input,), stop_episodes=episode_views(stop_episodes, *window))

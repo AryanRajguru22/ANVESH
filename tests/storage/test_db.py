@@ -3,6 +3,7 @@ from pathlib import Path
 from anvesh.evidence.reliability import ReliabilityScore
 from anvesh.feedback.update_engine import apply_feedback
 from anvesh.storage.db import CorridorStateStore, FeedbackRecordStore, RankingStore
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     CandidateCauseHypothesis,
@@ -34,6 +35,7 @@ def _traffic_state(camera_id, congestion_level=CongestionLevel.FREE_FLOW):
         density=3.0,
         congestion_level=congestion_level,
         motion_space=MotionSpace.WORLD,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

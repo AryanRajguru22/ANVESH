@@ -54,7 +54,8 @@ def _tracks(camera_id, count, speed, motion_space=MotionSpace.WORLD, first_seen=
 def _camera_input(camera_id, role, tracks, motion_space=MotionSpace.WORLD, window=WINDOW, max_capacity_vehicles=20):
     tracker = CongestionStateTracker()
     aggregation = aggregate_traffic_state(
-        camera_id, window[0], window[1], tracks, motion_space, tracker, max_capacity_vehicles=max_capacity_vehicles
+        camera_id, window[0], window[1], tracks, motion_space, tracker, max_capacity_vehicles=max_capacity_vehicles,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED if motion_space == MotionSpace.WORLD else GeometryValidity.IMAGE
     )
     return CameraWindowInput(camera_id=camera_id, role=role, aggregation=aggregation, tracks=tracks)
 

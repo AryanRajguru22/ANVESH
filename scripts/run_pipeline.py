@@ -28,6 +28,7 @@ from anvesh.logging_setup import configure_logging, get_logger
 from anvesh.perception.config import load_pipeline_config
 from anvesh.perception.pipeline import run_m1_pipeline
 from anvesh.perception.tracking import ByteTrackYoloTracker
+from anvesh.perception.weights import checkpoint_version_label
 
 logger = get_logger(__name__)
 
@@ -58,7 +59,7 @@ def main() -> int:
         camera_id=pipeline_config.camera_id,
         tracker=tracker,
         model_id=pipeline_config.model_name,
-        model_version="pretrained",
+        model_version=checkpoint_version_label(tracker.model_id),
         max_missed_frames=pipeline_config.max_missed_frames,
         partial_after_missed_frames=pipeline_config.partial_after_missed_frames,
         visualization_output_path=output_path,

@@ -8,7 +8,10 @@ from anvesh.world.calibration import (
     CalibrationProfile,
     CalibrationProvenance,
     CalibrationStatus,
+    MIN_HOLDOUT_POINTS,
+    MetricValidationRecord,
     MetricValidationStatus,
+    ValidationEvidenceKind,
     fit_planar_homography,
     from_cityflow_homography,
     load_cityflow_calibration,
@@ -342,16 +345,114 @@ def test_cityflow_supplied_profile_without_four_reference_points_does_not_raise(
 # --- Commit 5: existing calibration workflows must remain unchanged ---
 
 
-def test_fit_planar_homography_is_explicitly_manual_survey_and_validated():
-    """New provenance/metric_validation fields must not change
-    fit_planar_homography's pre-Commit-5 behavior, only make its already
-    -trusted status explicit."""
+def test_fit_planar_homography_is_manual_survey_but_fails_closed_without_validation_evidence():
+    """CHANGED EXPECTATION (hardening A1): this test used to assert VALIDATED for any 4+ points.
+    A fit is UNVALIDATED unless the caller supplies a MetricValidationRecord."""
     profile = fit_planar_homography("calib-01", "cam-A", make_reference_points())
 
     assert profile.provenance == CalibrationProvenance.MANUAL_SURVEY
-    assert profile.metric_validation == MetricValidationStatus.VALIDATED
+    assert profile.metric_validation == MetricValidationStatus.UNVALIDATED
+    assert profile.validation is None
     assert profile.units == "meters"
     assert profile.status == CalibrationStatus.CALIBRATED
+    assert not profile.supports_metric_speed
+    assert not profile.is_real_camera_validated and not profile.is_synthetic_validated
+
+
+# --- hardening A1: VALIDATED needs evidence ---------------------------------------------------
+
+
+def _survey_record(**kw):
+    base = dict(kind=ValidationEvidenceKind.SURVEY_HOLDOUT, evidence_ref="survey-2026-xx#holdout",
+                n_holdout_points=MIN_HOLDOUT_POINTS, holdout_rmse_m=0.1, tolerance_m=0.25)
+    base.update(kw)
+    return MetricValidationRecord(**base)
+
+
+@pytest.mark.parametrize("scale", [1.0, 1000.0])
+def test_any_four_points_even_a_nonsense_scale_do_not_reach_validated(scale):
+    pts = [CalibrationPoint(p.image_xy, (p.world_xy[0] * scale, p.world_xy[1] * scale)) for p in make_reference_points()]
+    profile = fit_planar_homography("calib-x", "cam-x", pts)
+    # a 4-point fit reproduces its own points almost exactly: that is not validation
+    assert profile.reprojection_error_m < 1e-6 * max(1.0, scale)
+    assert profile.geometry_validity.value == "world_unvalidated" and not profile.supports_metric_speed
+
+
+def test_validated_cannot_be_self_declared_without_a_record():
+    common = dict(calibration_profile_id="p", camera_id="c", status="calibrated", reference_points=make_reference_points(),
+                  homography=np.eye(3), inverse_homography=np.eye(3), reprojection_error_m=0.0, units="meters",
+                  metric_validation="validated")
+    with pytest.raises(ValueError, match="MetricValidationRecord"):
+        CalibrationProfile(provenance="manual_survey", **common)
+    with pytest.raises(ValueError, match="cannot be metric-VALIDATED"):
+        CalibrationProfile(provenance="cityflow_supplied", validation=_survey_record(), **common)
+    with pytest.raises(ValueError, match="cannot be metric-VALIDATED"):
+        CalibrationProfile(provenance="unknown", validation=_survey_record(), **common)
+
+
+def test_a_validation_record_on_an_unvalidated_or_uncalibrated_profile_is_rejected():
+    with pytest.raises(ValueError, match="not VALIDATED"):
+        CalibrationProfile("p", "c", "calibrated", make_reference_points(), np.eye(3), np.eye(3), 0.0,
+                           metric_validation="unvalidated", validation=_survey_record())
+    with pytest.raises(ValueError):
+        CalibrationProfile("p", "c", "uncalibrated", (), None, None, None, metric_validation="unvalidated",
+                           validation=_survey_record())
+
+
+@pytest.mark.parametrize("bad", [
+    dict(evidence_ref=""), dict(evidence_ref="   "),
+    dict(n_holdout_points=MIN_HOLDOUT_POINTS - 1),         # boundary: one short of the structural minimum
+    dict(holdout_rmse_m=0.26), dict(holdout_rmse_m=-0.1),  # boundary: just over tolerance / negative
+    dict(tolerance_m=0.0), dict(holdout_rmse_m=float("nan")), dict(tolerance_m=float("inf")),
+])
+def test_a_malformed_or_failing_survey_record_is_rejected(bad):
+    with pytest.raises(ValueError):
+        _survey_record(**bad)
+
+
+def test_record_boundaries_at_exactly_the_limits_are_accepted():
+    _survey_record(n_holdout_points=MIN_HOLDOUT_POINTS, holdout_rmse_m=0.25, tolerance_m=0.25)
+
+
+def test_a_survey_record_makes_the_profile_validated_and_real_camera_validated():
+    profile = fit_planar_homography("calib-s", "cam-s", make_reference_points(), validation=_survey_record())
+    assert profile.metric_validation == MetricValidationStatus.VALIDATED
+    assert profile.supports_metric_speed and profile.is_real_camera_validated
+    assert not profile.is_synthetic_validated
+
+
+def test_the_synthetic_opt_in_is_metric_but_never_real_camera_validated():
+    from anvesh.world.synthetic_fixture import (
+        build_camera_a_calibration,
+        build_camera_b_calibration,
+        fit_synthetic_validated_homography,
+    )
+
+    for profile in (fit_synthetic_validated_homography("s", "cam", make_reference_points()),
+                    build_camera_a_calibration(), build_camera_b_calibration()):
+        assert profile.supports_metric_speed and profile.is_synthetic_validated
+        assert not profile.is_real_camera_validated
+        assert profile.validation.kind == ValidationEvidenceKind.SYNTHETIC_TEST_ONLY
+
+
+def test_external_and_uncalibrated_profiles_are_never_validated_of_either_kind():
+    cf = from_cityflow_homography("cf", "cam", np.eye(3), reprojection_error=1.0)
+    for p in (cf, uncalibrated_profile("u", "cam")):
+        assert not p.supports_metric_speed and not p.is_real_camera_validated and not p.is_synthetic_validated
+
+
+def test_an_unvalidated_fit_yields_image_space_tracks_and_no_metric_speed():
+    from anvesh.perception.schema_conversion import build_vehicle_track, motion_space_for
+    from anvesh.perception.track_manager import TrackState
+    from anvesh.storage.schemas import MotionSpace, OcclusionState, VehicleClass
+
+    profile = fit_planar_homography("calib-u", "cam-u", make_reference_points())
+    assert motion_space_for(profile) == MotionSpace.IMAGE
+    traj = [(10.0, 10.0, 0.0), (60.0, 10.0, 1.0), (110.0, 10.0, 2.0)]
+    state = TrackState(track_id="1", vehicle_class=VehicleClass.CAR, first_seen=0.0, last_seen=2.0,
+                       occlusion_state=OcclusionState.VISIBLE, trajectory=traj, ground_point_trajectory=traj)
+    track = build_vehicle_track("cam-u", state, profile)
+    assert track.motion_space == MotionSpace.IMAGE and track.geometry_validity.value == "world_unvalidated"
 
 
 def test_uncalibrated_profile_is_explicitly_unknown_provenance():

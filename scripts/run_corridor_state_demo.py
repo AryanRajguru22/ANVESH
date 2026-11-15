@@ -35,6 +35,12 @@ CORRIDOR_ID = "dev-corridor-01"
 WINDOW_SECONDS = 10.0
 
 
+def _speed_cell(ts) -> str:
+    """A window's mean speed for display: the measured value, or "n/a" -- never a placeholder 0."""
+    measured = ts.measured_mean_speed()
+    return "n/a" if measured is None else f"{measured.value:.1f}"
+
+
 def _track(track_id, camera_id, window_start, window_end, speed_value):
     return VehicleTrack(
         track_id=track_id,
@@ -109,8 +115,8 @@ def main() -> int:
             row = (
                 f"{ws:>5.0f}-{we:<5.0f} | {a_ts.congestion_level.value:<12} | {b_ts.congestion_level.value:<12} | "
                 f"{assembly.corridor_state.fused_congestion_level.value:<14} | "
-                f"{a_ts.vehicle_count:>2}/{a_ts.mean_speed.value:<7.1f} | "
-                f"{b_ts.vehicle_count:>2}/{b_ts.mean_speed.value:<7.1f} | "
+                f"{a_ts.vehicle_count:>2}/{_speed_cell(a_ts):<7} | "
+                f"{b_ts.vehicle_count:>2}/{_speed_cell(b_ts):<7} | "
                 f"{rel_a.score:>6.2f} | {rel_b.score:>6.2f}"
             )
             print(row)

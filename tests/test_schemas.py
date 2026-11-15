@@ -172,6 +172,7 @@ def test_traffic_state_valid_instance():
         density=0.12,
         congestion_level="building",
         motion_space="world",
+        geometry_validity="world_validated",
     )
     assert state.congestion_level is CongestionLevel.BUILDING
     assert state.motion_space is MotionSpace.WORLD
@@ -189,6 +190,7 @@ def test_traffic_state_image_space_variant_valid():
         density=5.0,
         congestion_level="free_flow",
         motion_space="image",
+        geometry_validity="image",
     )
     assert state.motion_space is MotionSpace.IMAGE
 
@@ -312,6 +314,7 @@ def test_corridor_state_valid_instance():
         density=0.12,
         congestion_level="building",
         motion_space="world",
+        geometry_validity="world_validated",
     )
     corridor = CorridorState(
         corridor_state_id="cs-1",
@@ -391,6 +394,7 @@ def test_occupancy_out_of_range_raises_value_error():
             density=0.12,
             congestion_level="building",
             motion_space="world",
+            geometry_validity="world_validated",
         )
 
 
@@ -407,6 +411,7 @@ def test_negative_vehicle_count_raises_value_error():
             density=0.12,
             congestion_level="building",
             motion_space="world",
+            geometry_validity="world_validated",
         )
 
 
@@ -437,6 +442,7 @@ def test_wrong_type_for_nested_value_object_raises_type_error():
             density=0.12,
             congestion_level="building",
             motion_space="world",
+            geometry_validity="world_validated",
         )
 
 
@@ -551,3 +557,53 @@ def test_safety_event_window_end_before_start_raises_value_error():
 def test_safety_event_has_schema_version():
     field_names = {f.name for f in dataclasses.fields(SafetyEvent)}
     assert "schema_version" in field_names
+
+
+# --- hardening A2: TrafficState geometry validity ----------------------------------------------
+
+
+def _ts_kwargs(**over):
+    base = dict(camera_id="cam", window_start=0.0, window_end=10.0, occupancy=0.3,
+                mean_speed=Measurement(value=6.0, error=0.5), vehicle_count=3, flow_rate=0.3, density=3.0,
+                congestion_level="building", motion_space="world")
+    base.update(over)
+    return base
+
+
+def test_new_traffic_state_must_declare_geometry_validity_explicitly():
+    for space in ("world", "image"):
+        with pytest.raises(ValueError, match="explicitly"):
+            TrafficState(**_ts_kwargs(motion_space=space))
+
+
+def test_traffic_state_world_requires_validated_and_validated_requires_world():
+    with pytest.raises(ValueError, match="requires geometry_validity=WORLD_VALIDATED"):
+        TrafficState(**_ts_kwargs(motion_space="world", geometry_validity="world_unvalidated"))
+    with pytest.raises(ValueError, match="requires geometry_validity=WORLD_VALIDATED"):
+        TrafficState(**_ts_kwargs(motion_space="world", geometry_validity="image"))
+    with pytest.raises(ValueError, match="requires motion_space=WORLD"):
+        TrafficState(**_ts_kwargs(motion_space="image", geometry_validity="world_validated"))
+    ok = TrafficState(**_ts_kwargs(motion_space="image", geometry_validity="world_unvalidated"))
+    assert not ok.supports_metric
+    assert TrafficState(**_ts_kwargs(geometry_validity="world_validated")).supports_metric
+
+
+def test_legacy_traffic_state_without_validity_is_never_metric():
+    for version in ("1.0.0", "1.1.0"):
+        legacy = TrafficState(**_ts_kwargs(schema_version=version))
+        assert legacy.geometry_validity is None and not legacy.supports_metric
+        # its WORLD speed cannot be vouched for, even though the flag says it was "measured"
+        assert legacy.mean_speed_available is True
+        assert legacy.measured_mean_speed() is None
+    legacy_image = TrafficState(**_ts_kwargs(schema_version="1.0.0", motion_space="image"))
+    assert legacy_image.measured_mean_speed().value == 6.0  # an image-space (px/s) speed makes no metric claim
+
+
+def test_an_unparseable_schema_version_is_treated_as_legacy_not_current():
+    legacy = TrafficState(**_ts_kwargs(schema_version="banana"))
+    assert not legacy.supports_metric and legacy.measured_mean_speed() is None
+
+
+def test_current_schema_version_is_1_2_0():
+    assert schemas.TRAFFIC_STATE_SCHEMA_VERSION == "1.2.0"
+    assert TrafficState(**_ts_kwargs(geometry_validity="world_validated")).schema_version == "1.2.0"

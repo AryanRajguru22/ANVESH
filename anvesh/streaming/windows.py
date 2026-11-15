@@ -27,6 +27,27 @@ import enum
 from dataclasses import dataclass, field
 
 
+# FRAME-COMPLETENESS TOLERANCE (hardening D). `expected_frames` is `round(nominal_fps * window_length)`
+# and a half-open window `[start, end)` over an evenly spaced stream holds either floor or ceil of
+# that many frames, so a COMPLETE window can legitimately show up to one frame fewer than expected.
+# That ONE frame is the only allowance made here; it is the same ~1-frame resolution the rest of the
+# system already counts loss at (RTSP counts `round(dt / nominal_dt) - 1` lost frames and only once an
+# interval exceeds 1.5x nominal). Slower drift between the declared and the true frame rate is NOT
+# special-cased: it reads as a proportionally lower completeness, and the reasoner's existing
+# `min_update_coverage` (0.9) is what absorbs a small rate error before anything is withheld.
+FRAME_ALIGNMENT_TOLERANCE_FRAMES = 1
+
+
+def frame_completeness(frames_observed: int, expected_frames) -> float:
+    """Fraction of the window's expected frames that were actually observed, in [0, 1].
+
+    1.0 when the expectation is unknown/non-positive (nothing to compare against -- a window built
+    post hoc from a complete recording) or when at most `FRAME_ALIGNMENT_TOLERANCE_FRAMES` are missing."""
+    if not expected_frames or expected_frames <= 0:
+        return 1.0
+    return max(0.0, min(1.0, (frames_observed + FRAME_ALIGNMENT_TOLERANCE_FRAMES) / expected_frames))
+
+
 class WindowAvailability(str, enum.Enum):
     """How much of a window's time the camera actually delivered (M-A.1).
 
@@ -116,8 +137,12 @@ class WindowSnapshot:
     # complete recording (no loss information exists), i.e. "observed".
     expected_frames: int = None  # nominal fps * window length; None if unknown
     silent_s: float = 0.0  # seconds inside the window covered only by silences > max_gap_s
-    coverage: float = 1.0  # fraction of the window's time that was observed
+    coverage: float = 1.0  # fraction of the window's time that was observed (silence only; see frame_completeness)
     availability: WindowAvailability = WindowAvailability.OBSERVED
+    # Hardening D: fraction of the expected FRAMES that arrived. `coverage` only sees silences longer
+    # than `max_gap_s`, so uniform loss (e.g. 80% of frames dropped, never a long hole) leaves it at 1.0.
+    # 1.0 = unknown / complete (the default for a window cut post hoc from a complete recording).
+    frame_completeness: float = 1.0
     # Stop episodes touching this window (`safety.stop_episodes.StopEpisodeView`), computed
     # across window boundaries. None = not computed (e.g. a window cut post hoc from
     # clipped tracks): consumers then fall back to per-window classification, which is
@@ -134,6 +159,11 @@ class WindowSnapshot:
     @property
     def unavailable(self) -> bool:
         return self.availability == WindowAvailability.UNAVAILABLE
+
+    @property
+    def observation_completeness(self) -> float:
+        """How much of the window was really observed: the worse of time coverage and frame completeness."""
+        return min(self.coverage, self.frame_completeness)
 
     @property
     def window(self) -> tuple:

@@ -56,7 +56,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
 
-from anvesh.storage.schemas import CongestionLevel, Measurement, MotionSpace, TrafficState
+from anvesh.storage.schemas import CongestionLevel, GeometryValidity, Measurement, MotionSpace, TrafficState
 
 
 class DataQuality(str, Enum):
@@ -215,6 +215,32 @@ def _mean_concurrency(tracks: list, window_start: float, window_end: float) -> f
     return dwell / window_duration
 
 
+def _resolve_geometry_validity(camera_id: str, tracks: list, motion_space: MotionSpace, declared) -> GeometryValidity:
+    """The window's geometry validity (hardening A2). Explicit wins; otherwise it comes from the
+    tracks themselves (each already carries a structurally enforced validity) or, with no tracks,
+    from an IMAGE camera. It is NEVER invented for an empty WORLD window: validated geometry is a
+    property of the camera's calibration, which only the caller knows."""
+    if declared is not None:
+        declared = GeometryValidity(declared)
+        if motion_space == MotionSpace.WORLD and declared != GeometryValidity.WORLD_VALIDATED:
+            raise ValueError(f"aggregate_traffic_state: motion_space=WORLD requires geometry_validity=WORLD_VALIDATED, got {declared.value}")
+        if motion_space == MotionSpace.IMAGE and declared == GeometryValidity.WORLD_VALIDATED:
+            raise ValueError("aggregate_traffic_state: geometry_validity=WORLD_VALIDATED requires motion_space=WORLD")
+        return declared
+    if tracks:
+        kinds = {t.geometry_validity for t in tracks}
+        if motion_space == MotionSpace.WORLD:
+            return GeometryValidity.WORLD_VALIDATED  # every WORLD track is WORLD_VALIDATED (VehicleTrack invariant)
+        # IMAGE-space tracks may be IMAGE or WORLD_UNVALIDATED; a mixed window takes the weaker claim.
+        return GeometryValidity.IMAGE if GeometryValidity.IMAGE in kinds else GeometryValidity.WORLD_UNVALIDATED
+    if motion_space == MotionSpace.IMAGE:
+        return GeometryValidity.IMAGE
+    raise ValueError(
+        f"aggregate_traffic_state({camera_id!r}): a window with no tracks on a WORLD camera needs an explicit "
+        "geometry_validity (e.g. geometry_validity_for(calibration_profile)); it is never assumed"
+    )
+
+
 def aggregate_traffic_state(
     camera_id: str,
     window_start: float,
@@ -224,6 +250,7 @@ def aggregate_traffic_state(
     congestion_tracker: CongestionStateTracker,
     segment_length_m: float = None,
     max_capacity_vehicles: int = 20,
+    geometry_validity: GeometryValidity = None,
 ) -> TrafficStateAggregation:
     """Aggregate one camera's VehicleTracks overlapping [window_start,
     window_end] into a TrafficStateAggregation (frozen TrafficState +
@@ -248,6 +275,8 @@ def aggregate_traffic_state(
             f"aggregate_traffic_state(motion_space={motion_space.value!r}) received tracks in "
             f"{mismatched}: a window must be built from tracks of exactly one motion space"
         )
+
+    geometry_validity = _resolve_geometry_validity(camera_id, tracks, motion_space, geometry_validity)
 
     overlapping = _tracks_overlapping_window(tracks, window_start, window_end)
     window_duration = window_end - window_start
@@ -312,6 +341,7 @@ def aggregate_traffic_state(
         motion_space=motion_space,
         # A 0.0 `mean_speed` with no measured vehicle is a placeholder, not a speed.
         mean_speed_available=(speed_quality == DataQuality.OBSERVED),
+        geometry_validity=geometry_validity,
     )
 
     return TrafficStateAggregation(

@@ -346,14 +346,24 @@ class VehicleTrack:
             raise ValueError("motion_space=IMAGE (pixels) must not carry WorldPosition (metre) entries")
 
 
+TRAFFIC_STATE_SCHEMA_VERSION = "1.2.0"
+
+
+def _version_tuple(version: str) -> tuple:
+    try:
+        return tuple(int(part) for part in str(version).split("."))
+    except ValueError:
+        return (0,)  # unparseable == oldest: treated as legacy (fail closed)
+
+
 @dataclass(frozen=True)
 class TrafficState:
-    # KNOWN GAP (M-A.1): unlike `VehicleTrack`, this record carries no `geometry_validity`, so
-    # `motion_space=WORLD` here is not structurally tied to validated geometry. It is only as
-    # trustworthy as the code that builds it: `aggregate_traffic_state` refuses a space that
-    # disagrees with its tracks, but direct construction (evaluation scenarios, demos) and
-    # rehydration from storage are unguarded. `mean_speed_available=False` means `mean_speed`
-    # is a 0.0 placeholder, not a measurement.
+    # Hardening A2 (schema 1.2.0): like `VehicleTrack`, a new TrafficState MUST declare
+    # `geometry_validity`, and `motion_space=WORLD` is structurally tied to WORLD_VALIDATED.
+    # LEGACY states (schema_version < 1.2.0, e.g. rehydrated from old storage) may have
+    # `geometry_validity=None`: that means UNVERIFIED -- it is never treated as metric-validated
+    # (`supports_metric` is False, `measured_mean_speed()` withholds a WORLD speed).
+    # `mean_speed_available=False` means `mean_speed` is a 0.0 placeholder, not a measurement.
     camera_id: str
     window_start: float
     window_end: float
@@ -364,12 +374,14 @@ class TrafficState:
     density: float
     congestion_level: CongestionLevel
     motion_space: MotionSpace
-    schema_version: str = "1.1.0"
+    schema_version: str = TRAFFIC_STATE_SCHEMA_VERSION
     # M-A.1 (schema 1.1.0): False when NO vehicle in the window carried a real
     # speed measurement. `mean_speed.value` is then a 0.0 PLACEHOLDER -- not
     # "traffic at 0 m/s" -- and no consumer or display may read it as a speed.
-    # (True keeps the pre-1.1.0 meaning, so old rows/constructors are unchanged.)
     mean_speed_available: bool = True
+    # Hardening A2 (schema 1.2.0): what kind of quantity this camera's geometry can honestly
+    # produce. Required for schema >= 1.2.0; None only for legacy states (= unverified).
+    geometry_validity: GeometryValidity = None
 
     def __post_init__(self) -> None:
         _require_non_empty(self.camera_id, "camera_id")
@@ -382,6 +394,39 @@ class TrafficState:
             raise TypeError("mean_speed must be a Measurement instance")
         object.__setattr__(self, "congestion_level", CongestionLevel(self.congestion_level))
         object.__setattr__(self, "motion_space", MotionSpace(self.motion_space))
+        if self.geometry_validity is not None:
+            object.__setattr__(self, "geometry_validity", GeometryValidity(self.geometry_validity))
+        legacy = _version_tuple(self.schema_version) < _version_tuple(TRAFFIC_STATE_SCHEMA_VERSION)
+        if self.geometry_validity is None and not legacy:
+            raise ValueError(
+                f"a TrafficState (schema {self.schema_version}) must declare geometry_validity explicitly; "
+                "it is never derived from motion_space"
+            )
+        if self.geometry_validity is not None:
+            if self.motion_space == MotionSpace.WORLD and self.geometry_validity != GeometryValidity.WORLD_VALIDATED:
+                raise ValueError("motion_space=WORLD (metres) requires geometry_validity=WORLD_VALIDATED")
+            if self.motion_space == MotionSpace.IMAGE and self.geometry_validity == GeometryValidity.WORLD_VALIDATED:
+                raise ValueError("geometry_validity=WORLD_VALIDATED requires motion_space=WORLD")
+
+    @property
+    def supports_metric(self) -> bool:
+        """True only for a WORLD state whose geometry is declared WORLD_VALIDATED. A legacy state
+        with no recorded validity is NOT metric, whatever its `motion_space` says."""
+        return self.motion_space == MotionSpace.WORLD and self.geometry_validity == GeometryValidity.WORLD_VALIDATED
+
+    def measured_mean_speed(self):
+        """The window's mean speed if it was actually measured, else `None`.
+
+        `mean_speed` is a `Measurement` and cannot be absent, so when
+        `mean_speed_available` is False it holds a 0.0 placeholder. Display and
+        threshold code should read this accessor rather than `mean_speed.value`,
+        so a placeholder can never be mistaken for "traffic at 0 speed". A legacy WORLD
+        state with no recorded validity also yields None: its metres cannot be vouched for."""
+        if not self.mean_speed_available:
+            return None
+        if self.motion_space == MotionSpace.WORLD and not self.supports_metric:
+            return None
+        return self.mean_speed
 
 
 @dataclass(frozen=True)

@@ -39,6 +39,10 @@ def _load_export_module():
 export_ui_data = _load_export_module()
 
 
+class _StubTracker:
+    model_id = "stub-model.pt"
+
+
 @dataclass
 class _FakeDetection:
     bbox_xyxy: tuple
@@ -265,7 +269,7 @@ def test_real_video_limited_chain_omits_lane_speed_keys_by_default(monkeypatch, 
     _write_tiny_video(tiny_video)
 
     monkeypatch.setattr(export_ui_data, "run_m1_pipeline", _fake_run_m1_pipeline_factory([(5.0, 10.0, 0.0)]))
-    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: object())
+    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: _StubTracker())
 
     result = export_ui_data.real_video_limited_chain(video_path=tiny_video, camera_id="cam-test", sample_seconds=1.0)
 
@@ -286,7 +290,7 @@ def test_real_video_limited_chain_attaches_lane_and_speed_when_supplied(monkeypa
 
     trajectory = [(5.0 + i, 10.0, i * 0.1) for i in range(5)]  # moving, calibratable ground points
     monkeypatch.setattr(export_ui_data, "run_m1_pipeline", _fake_run_m1_pipeline_factory(trajectory))
-    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: object())
+    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: _StubTracker())
 
     calibration = fit_planar_homography("calib-test", "cam-test", make_reference_points())
     lane_regions = (LaneRegion(lane_id="L1", vertices=((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0))),)
@@ -314,14 +318,14 @@ def test_real_video_limited_chain_uses_world_motion_space_when_calibrated(monkey
     actually receives, not inferred from a fake track's own hardcoded
     motion_space."""
     from anvesh.storage.schemas import MotionSpace
-    from anvesh.world.calibration import fit_planar_homography
+    from anvesh.world.synthetic_fixture import fit_synthetic_validated_homography
     from tests.world.support import make_reference_points
 
     tiny_video = tmp_path / "tiny.mp4"
     _write_tiny_video(tiny_video)
 
     monkeypatch.setattr(export_ui_data, "run_m1_pipeline", _fake_run_m1_pipeline_factory([(5.0, 10.0, 0.0)]))
-    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: object())
+    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: _StubTracker())
 
     captured_motion_spaces = []
     orig_aggregate = export_ui_data.aggregate_traffic_state
@@ -332,7 +336,7 @@ def test_real_video_limited_chain_uses_world_motion_space_when_calibrated(monkey
 
     monkeypatch.setattr(export_ui_data, "aggregate_traffic_state", _spy_aggregate)
 
-    calibration = fit_planar_homography("calib-test", "cam-test", make_reference_points())
+    calibration = fit_synthetic_validated_homography("calib-test", "cam-test", make_reference_points())
     export_ui_data.real_video_limited_chain(
         video_path=tiny_video, camera_id="cam-test", sample_seconds=1.0, calibration_profile=calibration,
     )
@@ -346,7 +350,7 @@ def test_real_video_limited_chain_uses_image_motion_space_by_default(monkeypatch
     _write_tiny_video(tiny_video)
 
     monkeypatch.setattr(export_ui_data, "run_m1_pipeline", _fake_run_m1_pipeline_factory([(5.0, 10.0, 0.0)]))
-    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: object())
+    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: _StubTracker())
 
     captured_motion_spaces = []
     orig_aggregate = export_ui_data.aggregate_traffic_state
@@ -406,7 +410,7 @@ def test_real_video_limited_chain_with_an_unvalidated_cityflow_profile_never_exp
     # a long-lived, slowly moving vehicle; scale 0.01 would make the OLD path read it as "stopped"
     trajectory = [(50.0 + i, 100.0, i * 0.1) for i in range(5)]
     monkeypatch.setattr(export_ui_data, "run_m1_pipeline", _fake_run_m1_pipeline_factory(trajectory))
-    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: object())
+    monkeypatch.setattr(export_ui_data, "ByteTrackYoloTracker", lambda **kwargs: _StubTracker())
 
     captured = []
     orig = export_ui_data.aggregate_traffic_state

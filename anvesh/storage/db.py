@@ -79,6 +79,7 @@ def _traffic_state_to_dict(ts: TrafficState) -> dict:
         "congestion_level": ts.congestion_level.value,
         "motion_space": ts.motion_space.value,
         "mean_speed_available": ts.mean_speed_available,
+        "geometry_validity": ts.geometry_validity.value if ts.geometry_validity is not None else None,
         "schema_version": ts.schema_version,
     }
 
@@ -95,7 +96,16 @@ def _traffic_state_from_dict(d: dict) -> TrafficState:
         density=d["density"],
         congestion_level=d["congestion_level"],
         motion_space=d["motion_space"],
-        mean_speed_available=d.get("mean_speed_available", True),
+        # A row written before `mean_speed_available` existed (pre-1.1.0) cannot say whether
+        # its `mean_speed` was measured: empty windows stored a 0.0 placeholder, and a
+        # non-empty window's average may include placeholder tracks. A missing flag therefore
+        # loads as speed UNAVAILABLE (fail closed) -- never as a measured value. The row keeps
+        # its `schema_version` ("1.0.0" when absent), so legacy states stay identifiable.
+        mean_speed_available=d.get("mean_speed_available", False),
+        # Hardening A2: a row with no recorded geometry validity (legacy) loads as UNVERIFIED
+        # (None) -- never as metric-validated. A row claiming schema >= 1.2.0 without it is
+        # corrupt and TrafficState raises.
+        geometry_validity=d.get("geometry_validity"),
         schema_version=d.get("schema_version", "1.0.0"),
     )
 

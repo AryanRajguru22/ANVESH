@@ -72,11 +72,16 @@ class CameraWindowInput:
     role: CameraRole
     aggregation: object  # perception.traffic_state.TrafficStateAggregation
     tracks: list
+    # Hardening D: how much of the window was really observed (1.0 = complete / unknown). Scales the
+    # camera's reliability score, which in turn discounts its evidence in fusion and ranking.
+    observation_completeness: float = 1.0
 
     def __post_init__(self) -> None:
         if not self.camera_id:
             raise ValueError("camera_id must be a non-empty string")
         object.__setattr__(self, "role", CameraRole(self.role))
+        if not (0.0 <= self.observation_completeness <= 1.0):
+            raise ValueError(f"observation_completeness must be within [0, 1], got {self.observation_completeness}")
 
 
 @dataclass(frozen=True)
@@ -179,6 +184,7 @@ def run_corridor_window(
         reliability = compute_reliability(
             ci.camera_id, window[0], window[1], ci.tracks, ci.aggregation,
             weights=reliability_weights, saturating_observation_count=saturating_observation_count,
+            observation_completeness=ci.observation_completeness,
         )
         reliability_by_camera[ci.camera_id] = reliability
         evidence_by_camera[ci.camera_id] = build_evidence_for_camera(

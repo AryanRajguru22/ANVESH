@@ -86,7 +86,7 @@ anvesh
 
 ```bash
 pytest                                                  # core tests (one process over the whole suite can be killed by the memory guard)
-bash demo/tools/run_test_groups.sh demo/runs/tests.log  # the whole suite as 9 sequential processes (1,381 passed at the Session 8 baseline; 6 tests added afterwards were run on their own)
+bash demo/tools/run_test_groups.sh demo/runs/tests.log  # the whole suite as 9 sequential processes (1,403 passed at the Session 8 final run: 1,381 in the original groups + 22 in the officer-layer and stream test files, now part of group app-4)
 ```
 
 ## M-A evaluation scripts (need the CityFlow dataset at `E:\traffic dataset`, `models/yolov8n.pt`, a GPU)

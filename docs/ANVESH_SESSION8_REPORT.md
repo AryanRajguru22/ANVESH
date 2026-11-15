@@ -20,5 +20,22 @@ The interrupted session ended cleanly after commit `a74a400` (officer screen, 20
 - `ui_lifecycle.py` 12/12: frames reach the page, LIVE, clock advances, pause/resume, stop (server state `stopped`), stream request ends, 8 quick source switches leave the server responsive with one session running.
 - Tracker facts confirmed in Ultralytics 8.4.132: class-level ID counter, track_buffer 30 frames, conf 0.25 passed to predict hides the low-score stage. Not retuned (Session 7 measured conf 0.10: rejected).
 
-## Not done (usage limit)
-Final full 9-group test rerun after the last edits; quiet-machine performance re-measurement (historical Session 7 figures stand: 24.89 fps, p50 27.4 ms, p95 38.9 ms - historical, not re-measured); dashboard 320/390 px re-audit after the final CSS line; screenshot/handbook refresh; push. Handbook/panel guide untouched. Limitations unchanged: speed approximate, congestion is an occupancy proxy, plates unreadable at 640x360, nothing validated against ground truth, not deployment-ready.
+## Final test run (after the last code change)
+`bash demo/tools/run_test_groups.sh demo/runs/session8_final.log`: 38 + 110 + 109 + 77 + 306 + 193 + 132 + 229 + 187 = **1,381 passed, 0 failed**, plus `tests/app/test_officer_layer.py` and `tests/app/test_mjpeg_stream.py` (**22 passed**, now listed in group app-4 of the runner; the runner previously omitted the officer-layer file). Total 1,403.
+
+## Performance (measured this session; fast mode, nothing else running, RTX GPU, ultralytics 8.4.132)
+First 150 s of `demo.mp4`, `run_demo.py --fast`, single session, default tracker:
+
+| Metric | Value |
+|---|---|
+| Frames processed / dropped | 3,751 / 0 |
+| Throughput | 41.4 fps (wall 90.7 s). Fast mode is not real time; the Session 7 real-time run (24.89 fps = source rate) is historical |
+| detect+track | p50 10.5 ms, p95 23.6 ms, p99 31.8 ms (max 5.5 s = first-frame model warm-up) |
+| frame processing | p50 13.4 ms, p95 32.0 ms, p99 44.8 ms |
+| frame end-to-end | p50 145 ms, p95 276 ms - includes waiting in a full queue (capacity 8, blocking policy), so it is a fast-mode artefact, not live latency |
+| Events / tracks | 14 event candidates, 723 session-scoped track ids (not unique vehicles) |
+
+Memory/GPU were not sampled in this run (Session 7 figures stand, historical).
+
+## Remaining / not done
+Handbook, panel guide and screenshots were not regenerated (they describe the `/advanced` flow). Dashboard 320/390 px was not re-audited after the last chip-line CSS rule. Limitations unchanged: speed approximate (assumed lane-marking pitch), congestion is an occupancy proxy (assumed capacity 20), plates unreadable at 640x360, no ground-truth validation, research/demonstration build and not deployment-ready.

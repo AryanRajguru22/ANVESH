@@ -37,7 +37,8 @@ def test_no_tracks_scores_only_the_calibration_factor():
     """With zero tracks, observation/continuity/coverage all bottom out at
     0 -- but calibration is a fact about the camera, not the window, so it
     still contributes its full weight even with no evidence this window."""
-    aggregation = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, CongestionStateTracker())
+    aggregation = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, CongestionStateTracker(),
+                                          geometry_validity=GeometryValidity.WORLD_VALIDATED)
     score = compute_reliability("cam-A", 0.0, 10.0, [], aggregation)
     assert score.factors["observation_count"] == 0.0
     assert score.factors["tracking_continuity"] == 0.0

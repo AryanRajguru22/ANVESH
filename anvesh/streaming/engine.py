@@ -42,7 +42,13 @@ from anvesh.storage.schemas import MotionSpace
 from anvesh.perception.track_manager import identified_detections, occlusion_horizon_s
 from anvesh.streaming.latency import LatencyRecorder
 from anvesh.streaming.store import StreamingTrackStore
-from anvesh.streaming.windows import SlidingWindowScheduler, WindowAvailability, WindowSnapshot, WindowSpec
+from anvesh.streaming.windows import (
+    SlidingWindowScheduler,
+    WindowAvailability,
+    WindowSnapshot,
+    WindowSpec,
+    frame_completeness,
+)
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +113,7 @@ class StreamingPerceptionEngine:
         down_after_s: float = 10.0,
         on_health=None,
         stop_thresholds=None,
+        stop_displacement=None,
     ) -> None:
         if fps <= 0:
             raise ValueError("fps must be > 0")
@@ -160,7 +167,9 @@ class StreamingPerceptionEngine:
         self._scheduler = SlidingWindowScheduler(windows) if windows is not None else None
         # Stop episodes are followed across window boundaries (M-A.1 Fix 5), in the same
         # space the tracks are built in: metres only for validated geometry, else pixels.
-        self._stops = StopEpisodeTracker(camera_id, stop_thresholds)
+        # `stop_displacement` (a `safety.stop_episodes.DisplacementCriterion`) opts in to the jitter- and
+        # gap-robust stop rule; None keeps the default per-step speed rule.
+        self._stops = StopEpisodeTracker(camera_id, stop_thresholds, stop_displacement)
         self._stop_space = motion_space_for(calibration_profile)
 
         self._epoch = None
@@ -207,6 +216,12 @@ class StreamingPerceptionEngine:
     def stream_time(self):
         """Latest stream time the engine knows about (frame or tick)."""
         return self._clock_ts
+
+    @property
+    def silence_threshold_s(self) -> float:
+        """How long the stream may be silent before a tick acts (closes windows, ages tracks). Idle
+        polling needs to run at least this often for a silence to be noticed promptly."""
+        return self._gap_threshold_s
 
     # -- main entry --------------------------------------------------------
 
@@ -493,6 +508,7 @@ class StreamingPerceptionEngine:
         else:
             availability = WindowAvailability.OBSERVED
         sessions = tuple(sorted({_session_of(t.track_id) for t in tracks}))
+        expected_frames = int(round(self._fps * length))
         return WindowSnapshot(
             window_index=k,
             window_id=f"{self.camera_id}:w{k:06d}",
@@ -506,9 +522,10 @@ class StreamingPerceptionEngine:
             closed_at_stream_time=stream_time,
             final_partial=final_partial,
             trigger_capture_wall_s=trigger_wall,
-            expected_frames=int(round(self._fps * length)),
+            expected_frames=expected_frames,
             silent_s=silent,
             coverage=coverage,
+            frame_completeness=frame_completeness(frames_observed, expected_frames),
             availability=availability,
             stop_episodes=self._stops.views(start, end),
         )

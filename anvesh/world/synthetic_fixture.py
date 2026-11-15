@@ -25,7 +25,13 @@ from dataclasses import dataclass
 
 from anvesh.perception.types import RawDetection, TrackedDetection
 from anvesh.storage.schemas import CameraRole, VehicleClass
-from anvesh.world.calibration import CalibrationPoint, CalibrationProfile, fit_planar_homography
+from anvesh.world.calibration import (
+    CalibrationPoint,
+    CalibrationProfile,
+    MetricValidationRecord,
+    ValidationEvidenceKind,
+    fit_planar_homography,
+)
 from anvesh.world.corridor import CameraPlacement, CorridorTopology
 
 CAMERA_A_ID = "cam-A-upstream"
@@ -33,6 +39,30 @@ CAMERA_B_ID = "cam-B-downstream"
 CORRIDOR_ID = "dev-corridor-01"
 INTER_CAMERA_DISTANCE_M = 40.0
 VEHICLE_SPEED_M_PER_S = 8.0  # arbitrary constant (~29 km/h) used only to script this fixture
+
+
+SYNTHETIC_EVIDENCE_REF = "synthetic-fixture:anvesh.world.synthetic_fixture (no survey, no real camera)"
+
+
+def synthetic_validation_record() -> MetricValidationRecord:
+    """The explicit TEST/DEMO opt-in to metric geometry (hardening A1).
+
+    A `SYNTHETIC_TEST_ONLY` record states "treat this fixture as metric" and measures nothing:
+    the fixture's reference points are invented, so there is no independent check to record.
+    Profiles carrying it report `is_synthetic_validated` and never `is_real_camera_validated`."""
+    return MetricValidationRecord(
+        kind=ValidationEvidenceKind.SYNTHETIC_TEST_ONLY,
+        evidence_ref=SYNTHETIC_EVIDENCE_REF,
+        n_holdout_points=0,
+        holdout_rmse_m=0.0,
+        tolerance_m=1e-9,
+    )
+
+
+def fit_synthetic_validated_homography(calibration_profile_id: str, camera_id: str, reference_points: list) -> CalibrationProfile:
+    """`fit_planar_homography` + the synthetic opt-in. For tests, demos and fixtures ONLY: the
+    result is WORLD_VALIDATED but synthetic, so it must never stand in for a real camera."""
+    return fit_planar_homography(calibration_profile_id, camera_id, reference_points, validation=synthetic_validation_record())
 
 
 def build_camera_a_calibration() -> CalibrationProfile:
@@ -43,7 +73,7 @@ def build_camera_a_calibration() -> CalibrationProfile:
         CalibrationPoint(image_xy=(640.0, 0.0), world_xy=(32.0, 8.0)),
         CalibrationPoint(image_xy=(0.0, 0.0), world_xy=(0.0, 8.0)),
     ]
-    return fit_planar_homography("calib-cam-A-dev", CAMERA_A_ID, reference_points)
+    return fit_synthetic_validated_homography("calib-cam-A-dev", CAMERA_A_ID, reference_points)
 
 
 def build_camera_b_calibration() -> CalibrationProfile:
@@ -56,7 +86,7 @@ def build_camera_b_calibration() -> CalibrationProfile:
         CalibrationPoint(image_xy=(640.0, 0.0), world_xy=(INTER_CAMERA_DISTANCE_M + 32.0, 8.0)),
         CalibrationPoint(image_xy=(0.0, 0.0), world_xy=(INTER_CAMERA_DISTANCE_M + 0.0, 8.0)),
     ]
-    return fit_planar_homography("calib-cam-B-dev", CAMERA_B_ID, reference_points)
+    return fit_synthetic_validated_homography("calib-cam-B-dev", CAMERA_B_ID, reference_points)
 
 
 def build_corridor_topology() -> CorridorTopology:

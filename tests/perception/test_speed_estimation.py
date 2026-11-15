@@ -17,10 +17,10 @@ from anvesh.storage.schemas import GeometryValidity, Measurement, OcclusionState
 from anvesh.world.calibration import (
     CalibrationProvenance,
     MetricValidationStatus,
-    fit_planar_homography,
     from_cityflow_homography,
     uncalibrated_profile,
 )
+from anvesh.world.synthetic_fixture import fit_synthetic_validated_homography
 from tests.world.support import make_reference_points
 
 assert DEFAULT_MIN_SAMPLES == 3
@@ -39,7 +39,9 @@ def _cityflow_profile():
 
 
 def _manual_survey_profile():
-    return fit_planar_homography("calib-ms", "cam-ms", make_reference_points())
+    """Metric geometry for these tests: a SYNTHETIC-validated profile (the explicit opt-in). A plain
+    `fit_planar_homography` is UNVALIDATED since hardening A1; no real survey exists in this repo."""
+    return fit_synthetic_validated_homography("calib-ms", "cam-ms", make_reference_points())
 
 
 def _state_with_ground_points(points, track_id="1", centroid_points=None):
@@ -138,9 +140,9 @@ def test_speed_cannot_become_validated_merely_because_homography_exists():
 
 
 def test_manual_survey_calibration_produces_validated_confidence():
-    """Contrast case: a real, independently-measured survey DOES reach
-    VALIDATED -- proving APPROXIMATE isn't just a hardcoded universal
-    default, it specifically tracks metric_validation."""
+    """Contrast case: a profile that carries a validation record (here the SYNTHETIC test opt-in --
+    no real survey exists in this repo) DOES reach VALIDATED -- proving APPROXIMATE isn't just a
+    hardcoded universal default, it specifically tracks metric_validation."""
     profile = _manual_survey_profile()
     # Build a straight-line ground_point_trajectory inside the fitted
     # homography's well-conditioned region (see tests/world/support.py).

@@ -1,6 +1,7 @@
 import pytest
 
 from anvesh.evidence.reliability import ReliabilityScore
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import CameraRole, CongestionLevel, Measurement, MotionSpace, TrafficState
 from anvesh.world.corridor import CameraPlacement, CorridorTopology
 from anvesh.world.corridor_state import UNRANKED_PLACEHOLDER, assemble_corridor_state
@@ -18,6 +19,7 @@ def _traffic_state(camera_id, congestion_level):
         density=3.0,
         congestion_level=congestion_level,
         motion_space=MotionSpace.WORLD,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

@@ -79,6 +79,8 @@ _SEQ_CFG = {
 
 
 class _FakeTracker:
+    model_id = "fake-model.pt"
+
     def __init__(self, *args, **kwargs):
         pass
 

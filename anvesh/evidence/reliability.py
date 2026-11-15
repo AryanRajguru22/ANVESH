@@ -10,11 +10,13 @@ one as one input. Nothing here should be read as a calibrated confidence
 level; it exists only to give M4 (and this milestone's own diagnostics) a
 documented way to say "trust this camera's evidence more/less this window."
 
-KNOWN GAP (M-A.1): the score does not see FRAME loss. `temporal_coverage` is computed from the
-tracks' own spans, not from how much of the window the camera actually delivered, so a window with
-dropped frames or a short silence is flagged by `WindowSnapshot.availability` /
-`WindowAnalysis.status` but is NOT down-weighted here. (Missing speed measurements are: see
-`_calibration_factor`.)
+DATA LOSS (hardening D): `temporal_coverage` is computed from the tracks' own spans, not from how much
+of the window the camera delivered. Loss therefore enters through `observation_completeness`
+(`WindowSnapshot.observation_completeness`), a MULTIPLIER on the final score that is exactly neutral
+at 1.0: a window that lost 20% of its frames scores 0.8x what the same tracks would otherwise score.
+It is applied as a multiplier, not a fifth weight, so every existing score is unchanged when nothing
+was lost. The factor is recorded in `factors["observation_completeness"]` only when it is below 1.0.
+(Missing speed measurements are handled separately: see `_calibration_factor`.)
 """
 
 from __future__ import annotations
@@ -114,6 +116,7 @@ def compute_reliability(
     aggregation: TrafficStateAggregation,
     weights: ReliabilityWeights = None,
     saturating_observation_count: int = 3,
+    observation_completeness: float = 1.0,
 ) -> ReliabilityScore:
     """Score one camera's evidence quality for one window.
 
@@ -124,6 +127,8 @@ def compute_reliability(
     to the window (matching `contributing_track_ids` on `aggregation`).
     """
     weights = weights or ReliabilityWeights()
+    if not (0.0 <= observation_completeness <= 1.0):  # also rejects NaN
+        raise ValueError(f"observation_completeness must be within [0, 1], got {observation_completeness}")
     motion_space = aggregation.traffic_state.motion_space
 
     factors = {
@@ -139,6 +144,9 @@ def compute_reliability(
         + weights.calibration * factors["calibration"]
         + weights.temporal_coverage * factors["temporal_coverage"]
     )
+    if observation_completeness < 1.0:
+        score = score * observation_completeness
+        factors["observation_completeness"] = observation_completeness
 
     return ReliabilityScore(
         camera_id=camera_id,

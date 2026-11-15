@@ -265,3 +265,40 @@ def test_new_streaming_state_stays_bounded_over_a_long_churning_stream():
     for closed, tracked, frame_times, drops in sizes:
         assert closed <= 10 and tracked <= 5 and frame_times <= 250 and drops <= 40
     assert max(s[0] for s in sizes[len(sizes) // 2:]) <= max(s[0] for s in sizes[: len(sizes) // 2]) + 3  # no upward trend
+
+
+# ------------------------------------------------ a closure learned one window late ----
+
+def test_an_episode_that_ended_in_one_window_but_is_closed_in_the_next_is_reported_closed_once():
+    """The track vanishes at 19.4 s, 0.6 s before window [10,20) ends: not yet silent for max_gap (1 s), so the episode is still open in
+    that window. It closes while window [20,30) is processed with end 19.4 < 20, which `episode_views` alone would drop: the incident raised for it
+    would stay 'still open' for the rest of the stream (seen on the demo footage)."""
+    tr = StopEpisodeTracker("cam")
+    for i in range(195):  # 0.0 .. 19.4 s at 10 fps; moving for 5 s, then stationary
+        t = i / FPS
+        tr.observe(TID, MotionSpace.IMAGE, t, 100.0 + 50.0 * min(t, 5.0), 50.0)
+    tr.advance(20.0)
+    w1 = tr.views(10.0, 20.0)
+    assert [(v.phase, v.episode.end) for v in w1] == [(EpisodePhase.CONTINUING, None)]
+    tr.advance(30.0)  # silent for 10.6 s: closed, end = the last low-speed sample
+    tr.evict_before(20.0)  # what the engine does after every frame (floor = the oldest open window's start); must not drop the owed report
+    w2 = tr.views(20.0, 30.0)
+    assert len(w2) == 1 and w2[0].phase == EpisodePhase.CLOSED and w2[0].episode.closed_reason == "track_ended"
+    assert w2[0].episode.end == pytest.approx(19.4) and w2[0].episode.end < 20.0
+    assert tr.views(30.0, 40.0) == ()  # reported once, not forever
+    assert tr.evict_before(30.0) == 1 and tr.episodes() == []  # and only then is it evicted
+
+
+def test_an_episode_reported_closed_in_its_own_window_is_not_reported_again():
+    tr = StopEpisodeTracker("cam")
+    for i in range(100):  # stationary 0..9.9 s, then it moves off
+        tr.observe(TID, MotionSpace.IMAGE, i / FPS, 100.0, 50.0)
+    for i in range(100, 120):
+        tr.observe(TID, MotionSpace.IMAGE, i / FPS, 100.0 + 80.0 * (i / FPS - 10.0), 50.0)
+    tr.advance(10.0)
+    w1 = tr.views(0.0, 10.0)
+    assert [v.phase for v in w1] == [EpisodePhase.OPENED] or [v.phase for v in w1] == [EpisodePhase.CONTINUING]
+    tr.advance(20.0)
+    w2 = tr.views(10.0, 20.0)
+    assert len(w2) <= 1 and all(v.phase == EpisodePhase.CLOSED for v in w2)
+    assert tr.views(20.0, 30.0) == ()

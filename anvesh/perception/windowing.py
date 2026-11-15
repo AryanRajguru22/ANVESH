@@ -92,6 +92,7 @@ def build_traffic_state_timeline(
     total_duration: float = None,
     segment_length_m: float = None,
     max_capacity_vehicles: int = 20,
+    geometry_validity=None,
 ) -> tuple:
     """Run `aggregate_traffic_state` once per fixed window across the
     track list's timeline, in chronological order, sharing ONE
@@ -114,6 +115,7 @@ def build_traffic_state_timeline(
             congestion_tracker,
             segment_length_m=segment_length_m,
             max_capacity_vehicles=max_capacity_vehicles,
+            geometry_validity=geometry_validity,
         )
         for w in windows
     )

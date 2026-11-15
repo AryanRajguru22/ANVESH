@@ -4,7 +4,7 @@ from anvesh.perception.pipeline import run_m1_pipeline
 from anvesh.perception.track_manager import derive_run_id
 from anvesh.perception.types import RawDetection, TrackedDetection
 from anvesh.storage.schemas import CameraObservation, MotionSpace, OcclusionState, VehicleClass, VehicleTrack
-from anvesh.world.calibration import fit_planar_homography
+from anvesh.world.synthetic_fixture import fit_synthetic_validated_homography
 from tests.world.support import make_reference_points
 
 
@@ -143,7 +143,7 @@ def test_end_to_end_pipeline_produces_world_space_tracks_when_calibrated(tiny_vi
     # single metric-speed estimator (>= 3 samples, >= 0.3 s).
     script = {i: [("1", (100.0 + 20.0 * i, 200.0))] for i in range(5)}
     tracker = ScriptedTracker(script)
-    profile = fit_planar_homography("calib-e2e", "cam-e2e", make_reference_points())
+    profile = fit_synthetic_validated_homography("calib-e2e", "cam-e2e", make_reference_points())
     assert profile.supports_metric_speed
 
     result = run_m1_pipeline(

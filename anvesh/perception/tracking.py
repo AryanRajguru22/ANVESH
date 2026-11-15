@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from anvesh.perception.detection import COCO_CLASS_NAMES, COCO_TO_VEHICLE_CLASS
+from anvesh.perception.detection import ClassMap
 from anvesh.perception.types import RawDetection, TrackedDetection
 
 
@@ -20,7 +20,7 @@ class Tracker(Protocol):
     def reset(self) -> None: ...
 
 
-def parse_tracked_results(result, frame_index: int, timestamp: float) -> tuple:
+def parse_tracked_results(result, frame_index: int, timestamp: float, class_map: ClassMap = None) -> tuple:
     """Convert one Ultralytics `Results` object (from `model.track()`) into
     `(raw_detections, tracked_detections)`.
 
@@ -34,6 +34,7 @@ def parse_tracked_results(result, frame_index: int, timestamp: float) -> tuple:
     without loading a real YOLO model or ByteTrack
     (see tests/perception/test_tracking.py).
     """
+    class_map = class_map or ClassMap.coco()
     raw_detections: list = []
     tracked_detections: list = []
 
@@ -48,14 +49,14 @@ def parse_tracked_results(result, frame_index: int, timestamp: float) -> tuple:
 
     for box, cls_id, conf, track_id in zip(xyxy, cls_ids, confs, track_ids):
         cls_id_int = int(cls_id)
-        vehicle_class = COCO_TO_VEHICLE_CLASS.get(cls_id_int)
+        vehicle_class = class_map.id_to_vehicle_class.get(cls_id_int)
         if vehicle_class is None:
             continue
 
         detection = RawDetection(
             frame_index=frame_index,
             timestamp=timestamp,
-            class_name=COCO_CLASS_NAMES.get(cls_id_int, str(cls_id_int)),
+            class_name=class_map.id_to_name.get(cls_id_int, str(cls_id_int)),
             vehicle_class=vehicle_class,
             confidence=float(conf),
             bbox_xyxy=tuple(float(v) for v in box),
@@ -87,11 +88,15 @@ class ByteTrackYoloTracker:
     ) -> None:
         from ultralytics import YOLO  # lazy import: importing this module should not require torch/ultralytics
 
+        from anvesh.perception.weights import require_weights_file
+
+        require_weights_file(model_name)  # never let Ultralytics download a missing recognised name
         self._model = YOLO(model_name)
         self._model_name = model_name
         self._confidence_threshold = confidence_threshold
         self._tracker_config = tracker_config
-        self._classes = sorted(COCO_TO_VEHICLE_CLASS)
+        self._class_map = ClassMap.from_model_names(self._model.names)
+        self._classes = self._class_map.class_ids
         self._lost_buffer_frames = _read_lost_buffer_frames(tracker_config)
 
     @property
@@ -129,7 +134,7 @@ class ByteTrackYoloTracker:
             conf=self._confidence_threshold,
             verbose=False,
         )
-        return parse_tracked_results(results[0], frame_index, timestamp)
+        return parse_tracked_results(results[0], frame_index, timestamp, self._class_map)
 
 
 def _read_lost_buffer_frames(tracker_config: str, default: int = 30) -> int:

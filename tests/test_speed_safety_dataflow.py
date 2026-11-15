@@ -37,7 +37,8 @@ from anvesh.storage.schemas import EvidenceCompleteness, GeometryValidity, Motio
 from anvesh.streaming.engine import StreamingPerceptionEngine
 from anvesh.streaming.reasoning import WindowReasoner
 from anvesh.streaming.windows import WindowSpec
-from anvesh.world.calibration import CalibrationProfile, fit_planar_homography, from_cityflow_homography
+from anvesh.world.calibration import CalibrationProfile, from_cityflow_homography
+from anvesh.world.synthetic_fixture import fit_synthetic_validated_homography
 from tests.streaming.support import ScriptedTracker, make_frames
 from tests.world.support import make_reference_points
 
@@ -127,7 +128,7 @@ def test_positive_control_validated_calibration_does_reach_metric_consumers():
     """The same chain with a VALIDATED survey profile DOES deliver metric
     tracks and metric-speed evidence -- the safe tests above are not passing
     merely because nothing can ever flow."""
-    profile = fit_planar_homography("calib-survey", CAMERA, make_reference_points())
+    profile = fit_synthetic_validated_homography("calib-survey", CAMERA, make_reference_points())
     assert profile.supports_metric_speed
 
     engine, analyses = run_chain(profile)

@@ -35,6 +35,7 @@ from anvesh.storage.schemas import (
     DataCompleteness,
     Evidence,
     EvidenceCompleteness,
+    GeometryValidity,
     Measurement,
     MotionSpace,
     PropagationObservation,
@@ -86,11 +87,13 @@ def _traffic_states():
         camera_id="cam-A", window_start=0.0, window_end=10.0, occupancy=1.0,
         mean_speed=Measurement(value=1.0, error=0.0), vehicle_count=20, flow_rate=2.0,
         density=20.0, congestion_level=CongestionLevel.CONGESTED, motion_space=MotionSpace.WORLD,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED,  # hand-authored synthetic scenario, not a real camera
     )
     downstream = TrafficState(
         camera_id="cam-B", window_start=0.0, window_end=10.0, occupancy=0.25,
         mean_speed=Measurement(value=9.0, error=0.0), vehicle_count=5, flow_rate=1.0,
         density=5.0, congestion_level=CongestionLevel.FREE_FLOW, motion_space=MotionSpace.WORLD,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED,  # hand-authored synthetic scenario, not a real camera
     )
     return upstream, downstream
 

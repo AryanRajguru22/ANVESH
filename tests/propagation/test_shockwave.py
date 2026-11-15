@@ -6,6 +6,7 @@ from anvesh.propagation.shockwave import (
     predict_propagation,
     predict_shockwave_speed,
 )
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import CameraRole, CongestionLevel, Measurement, MotionSpace, TrafficState
 from anvesh.world.corridor import CameraPlacement, CorridorTopology
 
@@ -24,6 +25,7 @@ def _traffic_state(camera_id, vehicle_count, flow_rate, motion_space=MotionSpace
         density=float(vehicle_count),
         congestion_level=congestion,
         motion_space=motion_space,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED if motion_space == MotionSpace.WORLD else GeometryValidity.IMAGE,
     )
 
 

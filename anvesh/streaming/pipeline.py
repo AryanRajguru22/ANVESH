@@ -29,6 +29,14 @@ from anvesh.streaming.queues import BoundedQueue, DropPolicy, QueueClosed
 
 _SENTINEL = object()
 
+# `idle_poll_s` default (hardening E). "auto" means: poll for silence if (and only if) the source can
+# report a stream clock (`stream_time()`); pass None to opt out explicitly, or a number of seconds.
+IDLE_POLL_AUTO = "auto"
+# Upper bound on the automatic poll period. The effective period is also capped at half the engine's
+# silence threshold so a silence is noticed within about one and a half thresholds. Polling is cheap:
+# a tick during normal inter-frame idle time changes nothing (see `StreamingPerceptionEngine.tick`).
+MAX_AUTO_IDLE_POLL_S = 0.5
+
 
 class StreamingPipeline:
     def __init__(
@@ -41,15 +49,34 @@ class StreamingPipeline:
         frame_policy: DropPolicy = DropPolicy.BLOCK,
         window_policy: DropPolicy = None,
         max_frames: int = None,
-        idle_poll_s: float = None,
+        idle_poll_s=IDLE_POLL_AUTO,
     ) -> None:
-        if idle_poll_s is not None and idle_poll_s <= 0:
-            raise ValueError("idle_poll_s must be > 0 when given")
-        # LIVENESS (M-A.1): with `idle_poll_s` set, a worker that receives no frame for
-        # that long calls `engine.tick(...)` with the source's stream clock/state, so a
-        # silent camera still closes windows (as UNAVAILABLE) and changes `engine.health`
-        # instead of the pipeline waiting forever for a frame that never comes. Leave it
-        # None for recorded files (the reader simply ends).
+        # LIVENESS (M-A.1, hardening E): with idle polling on, a worker that receives no frame for
+        # `idle_poll_s` calls `engine.tick(...)` with the source's stream clock/state, so a silent
+        # camera still closes windows (as UNAVAILABLE) and changes `engine.health` instead of the
+        # pipeline waiting forever for a frame that never comes.
+        #   IDLE_POLL_AUTO (default) -- on iff the source exposes a callable `stream_time()` (the RTSP
+        #                      source does; recorded-file sources do not and are unchanged);
+        #   None             -- explicitly off (even if the source could support it);
+        #   a number         -- explicitly on; REQUIRES `stream_time()`, because without a stream clock
+        #                      the poll would silently do nothing: ValueError instead of a no-op.
+        # The frame policy is NOT changed by this (files and live both default to BLOCK, as before).
+        supports_clock = callable(getattr(source, "stream_time", None))
+        if isinstance(idle_poll_s, str):
+            if idle_poll_s != IDLE_POLL_AUTO:
+                raise ValueError(f"idle_poll_s must be None, a positive number, or {IDLE_POLL_AUTO!r}; got {idle_poll_s!r}")
+            idle_poll_s = (
+                min(MAX_AUTO_IDLE_POLL_S, engine.silence_threshold_s / 2.0) if supports_clock else None
+            )
+        elif idle_poll_s is not None:
+            if isinstance(idle_poll_s, bool) or not isinstance(idle_poll_s, (int, float)) or not idle_poll_s > 0:
+                raise ValueError("idle_poll_s must be > 0 when given")
+            if not supports_clock:
+                raise ValueError(
+                    f"idle_poll_s={idle_poll_s} was requested but {type(source).__name__} has no stream_time(): "
+                    "without a stream clock the idle poll cannot see a silence and would do nothing. "
+                    "Give the source a stream_time() method, or pass idle_poll_s=None."
+                )
         self._idle_poll_s = idle_poll_s
         self._source = source
         self._engine = engine
@@ -62,6 +89,11 @@ class StreamingPipeline:
         self._stop = threading.Event()
         self.reader_frames = 0
         self.wall_seconds = 0.0
+
+    @property
+    def idle_poll_s(self):
+        """The effective idle-poll period in seconds, or None when idle polling is off."""
+        return self._idle_poll_s
 
     def stop(self) -> None:
         self._stop.set()
@@ -165,6 +197,7 @@ class StreamingPipeline:
     def stats(self) -> dict:
         eng = self._engine.stats()
         return {
+            "idle_poll_s": self._idle_poll_s,
             "engine": eng,
             "frame_queue": self.frame_queue.stats(),
             "window_queue": self.window_queue.stats(),

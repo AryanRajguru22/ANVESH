@@ -80,6 +80,14 @@ def flow_density_from_traffic_state(traffic_state: TrafficState, segment_length_
             f"camera '{traffic_state.camera_id}' is not calibrated "
             f"(motion_space={traffic_state.motion_space.value}) -- cannot compute a physical shockwave speed"
         )
+    if not traffic_state.supports_metric:
+        # Hardening A2: WORLD alone is not enough -- a legacy/rehydrated state with no recorded
+        # geometry validity must not feed a metric (m/s) estimate.
+        raise ValueError(
+            f"camera '{traffic_state.camera_id}': TrafficState has no WORLD_VALIDATED geometry "
+            f"(geometry_validity={getattr(traffic_state.geometry_validity, 'value', None)}) -- "
+            "cannot compute a physical shockwave speed"
+        )
     if segment_length_m <= 0:
         raise ValueError(f"segment_length_m must be > 0, got {segment_length_m}")
 

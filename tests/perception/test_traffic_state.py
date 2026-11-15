@@ -123,7 +123,7 @@ def test_sparse_observations_single_vehicle():
 
 
 def test_missing_observations_zero_tracks_marks_speed_unavailable():
-    result = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, _tracker())
+    result = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, _tracker(), geometry_validity=GeometryValidity.WORLD_VALIDATED)
 
     ts = result.traffic_state
     assert ts.vehicle_count == 0
@@ -141,14 +141,14 @@ def test_empty_road_is_never_misread_as_congested():
     """Regression: a 0.0 m/s *placeholder* over zero vehicles must not be
     fed through the same speed threshold as a genuine 0.0 m/s over present
     (gridlocked) vehicles -- an empty road is free-flowing, not congested."""
-    result = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, _tracker())
+    result = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, _tracker(), geometry_validity=GeometryValidity.WORLD_VALIDATED)
     assert result.traffic_state.congestion_level == CongestionLevel.FREE_FLOW
 
 
 def test_empty_windows_do_not_accumulate_false_congestion_over_time():
     tracker = _tracker()
     for _ in range(5):
-        result = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, tracker)
+        result = aggregate_traffic_state("cam-A", 0.0, 10.0, [], MotionSpace.WORLD, tracker, geometry_validity=GeometryValidity.WORLD_VALIDATED)
         assert result.traffic_state.congestion_level == CongestionLevel.FREE_FLOW
 
 

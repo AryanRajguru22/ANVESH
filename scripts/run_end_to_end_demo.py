@@ -34,6 +34,7 @@ sys.path.insert(0, str(REPO_ROOT))  # allow running without `pip install -e .`
 from anvesh.pipeline import CameraWindowInput, run_corridor_window
 from anvesh.perception.pipeline import run_m1_pipeline
 from anvesh.perception.tracking import ByteTrackYoloTracker
+from anvesh.perception.weights import checkpoint_version_label
 from anvesh.perception.traffic_state import CongestionStateTracker, aggregate_traffic_state
 from anvesh.perception.windowing import generate_windows, tracks_in_window, video_duration_from_tracks
 from anvesh.storage.schemas import GeometryValidity
@@ -205,7 +206,7 @@ def run_real_video_section() -> None:
     )
     m1_result = run_m1_pipeline(
         video_path=video_path, camera_id=camera_id, tracker=tracker,
-        model_id=validation_cfg["model_name"], model_version="pretrained",
+        model_id=validation_cfg["model_name"], model_version=checkpoint_version_label(tracker.model_id),
         max_missed_frames=validation_cfg["max_missed_frames"],
         partial_after_missed_frames=validation_cfg["partial_after_missed_frames"],
     )

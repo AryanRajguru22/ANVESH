@@ -38,6 +38,7 @@ such validation step exists anywhere in the codebase yet.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -83,6 +84,72 @@ class MetricValidationStatus(str, Enum):
     UNVALIDATED = "unvalidated"
 
 
+class ValidationEvidenceKind(str, Enum):
+    """What a `MetricValidationRecord` is evidence OF.
+
+      SURVEY_HOLDOUT       -- a real site survey: reference points/distances that were NOT used
+                              to fit the homography, compared against it.
+      SYNTHETIC_TEST_ONLY  -- a fixture or demo. Declares "treat this as metric for the test";
+                              measures nothing and is never evidence about a real camera.
+    """
+
+    SURVEY_HOLDOUT = "survey_holdout"
+    SYNTHETIC_TEST_ONLY = "synthetic_test_only"
+    # Scale taken from a PUBLISHED road-marking module (e.g. UK TSRGD diagram 1005.1: 2 m mark + 7 m gap) and
+    # checked against marking segments that were NOT used in the fit. Weaker than a site survey: it assumes the
+    # road is built to the standard and says nothing about the identity of the road. Speeds derived from it are
+    # APPROXIMATE and must be presented as such.
+    MARKING_STANDARD_HOLDOUT = "marking_standard_holdout"
+
+
+# A real hold-out must contain at least this many independent points. This is a STRUCTURAL
+# minimum (a homography itself needs 4), not a statistical guarantee of accuracy.
+MIN_HOLDOUT_POINTS = 4
+
+
+@dataclass(frozen=True)
+class MetricValidationRecord:
+    """The auditable evidence behind `MetricValidationStatus.VALIDATED` (hardening A1).
+
+    A homography fitted from `n` correspondences reproduces those same `n` points almost
+    exactly (an exact fit with 4), so the in-sample `reprojection_error_m` says nothing about
+    whether the output is metric. `VALIDATED` therefore requires a record of an INDEPENDENT
+    check. This class validates the record's structure and internal consistency only; it
+    cannot prove the evidence is true. The procedure that produces real evidence (surveyed
+    hold-out points, reference speeds) is not implemented here (M-B)."""
+
+    kind: ValidationEvidenceKind
+    evidence_ref: str  # where the evidence lives (survey id / file) -- must be non-empty
+    n_holdout_points: int
+    holdout_rmse_m: float
+    tolerance_m: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "kind", ValidationEvidenceKind(self.kind))
+        if not isinstance(self.evidence_ref, str) or not self.evidence_ref.strip():
+            raise ValueError("a MetricValidationRecord needs a non-empty evidence_ref")
+        for name in ("holdout_rmse_m", "tolerance_m"):
+            value = getattr(self, name)
+            if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value):
+                raise ValueError(f"{name} must be a finite number, got {value!r}")
+        if self.holdout_rmse_m < 0:
+            raise ValueError("holdout_rmse_m must be >= 0")
+        if self.tolerance_m <= 0:
+            raise ValueError("tolerance_m must be > 0")
+        if self.holdout_rmse_m > self.tolerance_m:
+            raise ValueError(
+                f"hold-out error {self.holdout_rmse_m} m exceeds the declared tolerance {self.tolerance_m} m: "
+                "this evidence does not support VALIDATED"
+            )
+        if not isinstance(self.n_holdout_points, int) or isinstance(self.n_holdout_points, bool) or self.n_holdout_points < 0:
+            raise ValueError("n_holdout_points must be a non-negative integer")
+        if self.kind in (ValidationEvidenceKind.SURVEY_HOLDOUT, ValidationEvidenceKind.MARKING_STANDARD_HOLDOUT)                 and self.n_holdout_points < MIN_HOLDOUT_POINTS:
+            raise ValueError(
+                f"a {self.kind.name} record needs at least {MIN_HOLDOUT_POINTS} independent hold-out points, "
+                f"got {self.n_holdout_points}"
+            )
+
+
 @dataclass(frozen=True)
 class CalibrationPoint:
     """One manually-surveyed image<->world correspondence used to fit the homography.
@@ -118,6 +185,9 @@ class CalibrationProfile:
     method: str = "manual_planar_homography_v1"
     provenance: CalibrationProvenance = CalibrationProvenance.MANUAL_SURVEY
     metric_validation: MetricValidationStatus = MetricValidationStatus.UNVALIDATED
+    # Hardening A1: the evidence behind VALIDATED. Required when (and only when) metric_validation
+    # is VALIDATED; see `MetricValidationRecord`.
+    validation: MetricValidationRecord = None
 
     def __post_init__(self) -> None:
         if not self.calibration_profile_id:
@@ -145,9 +215,24 @@ class CalibrationProfile:
                 raise ValueError(
                     f"a VALIDATED profile must have units == 'meters', got {self.units!r}"
                 )
+            if self.metric_validation == MetricValidationStatus.VALIDATED:
+                # Hardening A1: VALIDATED is not a self-declaration. Only a surveyed profile that
+                # carries an auditable validation record may claim it; an externally supplied
+                # homography (e.g. CityFlow) never can.
+                if self.provenance != CalibrationProvenance.MANUAL_SURVEY:
+                    raise ValueError(
+                        f"a {self.provenance.value} profile cannot be metric-VALIDATED: only MANUAL_SURVEY "
+                        "profiles can carry validation evidence"
+                    )
+                if not isinstance(self.validation, MetricValidationRecord):
+                    raise ValueError("a VALIDATED profile requires a MetricValidationRecord (validation=...)")
+            elif self.validation is not None:
+                raise ValueError("a validation record was supplied but metric_validation is not VALIDATED")
         else:
             if self.metric_validation == MetricValidationStatus.VALIDATED:
                 raise ValueError("an UNCALIBRATED profile cannot be metric-VALIDATED")
+            if self.validation is not None:
+                raise ValueError("an UNCALIBRATED profile cannot carry a validation record")
             if self.homography is not None or self.inverse_homography is not None:
                 raise ValueError("an UNCALIBRATED profile must not carry a homography")
             if self.reprojection_error_m is not None:
@@ -171,6 +256,35 @@ class CalibrationProfile:
     def supports_metric_speed(self) -> bool:
         """True iff m/s / km/h may be derived from this profile."""
         return self.geometry_validity == GeometryValidity.WORLD_VALIDATED
+
+    @property
+    def is_synthetic_validated(self) -> bool:
+        """VALIDATED only by a test/demo opt-in (`SYNTHETIC_TEST_ONLY` record)."""
+        return (
+            self.geometry_validity == GeometryValidity.WORLD_VALIDATED
+            and self.validation is not None
+            and self.validation.kind == ValidationEvidenceKind.SYNTHETIC_TEST_ONLY
+        )
+
+    @property
+    def is_real_camera_validated(self) -> bool:
+        """VALIDATED on the strength of survey hold-out evidence (as recorded -- not independently
+        re-verified by this code). Always False for a synthetic opt-in and for external homographies."""
+        return (
+            self.geometry_validity == GeometryValidity.WORLD_VALIDATED
+            and self.validation is not None
+            and self.validation.kind == ValidationEvidenceKind.SURVEY_HOLDOUT
+        )
+
+    @property
+    def is_marking_standard_validated(self) -> bool:
+        """VALIDATED only against a published road-marking module (see `MARKING_STANDARD_HOLDOUT`):
+        approximate metric scale, site not surveyed."""
+        return (
+            self.geometry_validity == GeometryValidity.WORLD_VALIDATED
+            and self.validation is not None
+            and self.validation.kind == ValidationEvidenceKind.MARKING_STANDARD_HOLDOUT
+        )
 
     def image_to_world(self, image_xy: tuple) -> tuple:
         """Project an image-space pixel onto the road plane, in metres.
@@ -204,8 +318,16 @@ def fit_planar_homography(
     calibration_profile_id: str,
     camera_id: str,
     reference_points: list,
+    validation: MetricValidationRecord = None,
 ) -> CalibrationProfile:
     """Fit a planar-road homography from >=4 manually-surveyed correspondences.
+
+    FAILS CLOSED (hardening A1): the returned profile is CALIBRATED but `UNVALIDATED` -- its
+    geometry is `WORLD_UNVALIDATED`, so tracks stay image-space and no m/s or km/h is derived --
+    unless the caller supplies a `MetricValidationRecord` (independent hold-out evidence). The
+    fit's own `reprojection_error_m` is in-sample and is NOT validation (a 4-point fit is exact).
+    Test/demo code that needs metric geometry uses the explicitly named
+    `anvesh.world.synthetic_fixture.fit_synthetic_validated_homography`.
 
     Raises `ValueError` for degenerate input (fewer than 4 points,
     collinear points, or a numerically singular fit) instead of silently
@@ -242,15 +364,11 @@ def fit_planar_homography(
         inverse_homography=inverse_homography,
         reprojection_error_m=reprojection_error_m,
         provenance=CalibrationProvenance.MANUAL_SURVEY,
-        # KNOWN LIMITATION (M-A, ANVESH_PRODUCT_GAP_AUDIT.md SS5): VALIDATED is
-        # asserted here "by construction" from whatever correspondences the
-        # caller supplied (CalibrationPoint's contract says they are measured
-        # metres) -- there is no hold-out reprojection check, no reprojection
-        # threshold and no ground-truth speed test, and no real survey has ever
-        # been run through this path. It is the only way to reach
-        # `GeometryValidity.WORLD_VALIDATED` today, so synthetic fixtures and any
-        # future surveyed camera pass; "earning" VALIDATED is P2 work.
-        metric_validation=MetricValidationStatus.VALIDATED,
+        # Hardening A1: VALIDATED needs evidence. Without a record the profile is UNVALIDATED.
+        # (Before this change VALIDATED was asserted "by construction" for any 4+ points.) No code
+        # in this repository produces a real SURVEY_HOLDOUT record yet: that is M-B.
+        metric_validation=MetricValidationStatus.VALIDATED if validation is not None else MetricValidationStatus.UNVALIDATED,
+        validation=validation,
     )
 
 

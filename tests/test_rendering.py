@@ -31,7 +31,8 @@ from anvesh.storage.schemas import (
     VehicleClass,
     VehicleTrack,
 )
-from anvesh.world.calibration import fit_planar_homography, from_cityflow_homography
+from anvesh.world.calibration import from_cityflow_homography
+from anvesh.world.synthetic_fixture import fit_synthetic_validated_homography
 from tests.world.support import make_reference_points
 from anvesh.world.lane_geometry import LaneAssignmentResult, LaneAssignmentStatus, LaneRegion, assign_lane
 
@@ -366,7 +367,7 @@ def test_end_to_end_stopped_vehicle_is_rendered_as_resolved_candidate():
     # WORLD, i.e. metric, track; a metric track must come from validated
     # geometry -- it used to pair it with an unvalidated CityFlow profile,
     # the very inconsistency the M-A speed-safety work removed.) --
-    calibration_profile = fit_planar_homography("calib-survey", CAMERA_ID, make_reference_points())
+    calibration_profile = fit_synthetic_validated_homography("calib-survey", CAMERA_ID, make_reference_points())
     track_state = TrackState(
         track_id=raw_track_id, vehicle_class=VehicleClass.CAR, first_seen=0.0, last_seen=0.4,
         occlusion_state=OcclusionState.VISIBLE,

@@ -44,7 +44,16 @@ def _plausible_fps(fps) -> bool:
     return bool(fps) and 1.0 <= float(fps) <= 240.0
 
 
+def _usable(image) -> bool:
+    """A decoded frame the pipeline can work on. Some FFmpeg/driver combinations return ok=True with None or an empty array
+    for a damaged packet; feeding that to the detector would raise and end the whole session."""
+    return image is not None and getattr(image, "size", 0) > 0 and getattr(image, "ndim", 0) in (2, 3)
+
+
 class RtspFrameSource:
+    # This many corrupt frames IN A ROW are treated as a broken connection (reconnect) rather than as isolated bad packets.
+    MAX_CONSECUTIVE_CORRUPT = 30
+
     def __init__(
         self,
         url: str,
@@ -78,6 +87,7 @@ class RtspFrameSource:
         self._frames_read = 0
         self._reconnects = 0
         self._gap_frames = 0
+        self._corrupt_frames = 0
         self._last_error = ""
         self._intervals: collections.deque = collections.deque(maxlen=64)
         self._ema_fps = 0.0
@@ -117,6 +127,7 @@ class RtspFrameSource:
             state=self._state, epoch=max(self._epoch, 0), frames_read=self._frames_read,
             reconnects=self._reconnects, source_gap_frames=self._gap_frames,
             measured_fps=self._ema_fps, interval_jitter_s=jitter, last_error=self._last_error,
+            corrupt_frames=self._corrupt_frames,
         )
 
     def close(self) -> None:
@@ -152,6 +163,7 @@ class RtspFrameSource:
             if self._epoch > 0:
                 self._reconnects += 1
             self._state = "connected"
+            corrupt_run = 0
             reconnect_downtime = None
             if self._epoch > 0 and last_wall is not None:
                 reconnect_downtime = self._clock() - last_wall
@@ -163,6 +175,15 @@ class RtspFrameSource:
                     now = self._clock()
                     if not ok:
                         raise RuntimeError("read failed")
+                    if not _usable(image):
+                        # Skip it: no Frame is produced, the lost time shows up as `gap_before` on the next good frame.
+                        self._corrupt_frames += 1
+                        corrupt_run += 1
+                        self._last_error = "corrupt frame skipped"
+                        if corrupt_run >= self.MAX_CONSECUTIVE_CORRUPT:
+                            raise RuntimeError(f"{corrupt_run} consecutive corrupt frames")
+                        continue
+                    corrupt_run = 0
                     failures = 0
                     if t0 is None:
                         t0 = now

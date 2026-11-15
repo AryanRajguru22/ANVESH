@@ -12,7 +12,8 @@ from anvesh.storage.schemas import (
     VehicleTrack,
     WorldPosition,
 )
-from anvesh.world.calibration import fit_planar_homography, uncalibrated_profile
+from anvesh.world.calibration import uncalibrated_profile
+from anvesh.world.synthetic_fixture import fit_synthetic_validated_homography
 from tests.world.support import make_reference_points
 
 
@@ -126,7 +127,7 @@ def test_vehicle_track_is_world_space_when_validated():
     centroid history (deliberately all-zero here) must play no part."""
     import math
 
-    profile = fit_planar_homography("calib-01", "cam-01", make_reference_points())
+    profile = fit_synthetic_validated_homography("calib-01", "cam-01", make_reference_points())
     assert profile.geometry_validity == GeometryValidity.WORLD_VALIDATED
     state = _ground_state(_MOVING_GROUND_POINTS)
 
@@ -178,7 +179,7 @@ def test_validated_geometry_with_too_few_samples_has_no_speed_not_zero():
     """A 2-sample track has no measurable speed; it must say so
     (`speed_available=False`) rather than present a fabricated 0 m/s that a
     consumer would read as "stopped"."""
-    profile = fit_planar_homography("calib-01", "cam-01", make_reference_points())
+    profile = fit_synthetic_validated_homography("calib-01", "cam-01", make_reference_points())
     state = _ground_state(_MOVING_GROUND_POINTS[:2])
 
     track = build_vehicle_track("cam-01", state, calibration_profile=profile)
@@ -188,7 +189,7 @@ def test_validated_geometry_with_too_few_samples_has_no_speed_not_zero():
 
 
 def test_validated_geometry_with_implausible_speed_has_no_speed():
-    profile = fit_planar_homography("calib-01", "cam-01", make_reference_points())
+    profile = fit_synthetic_validated_homography("calib-01", "cam-01", make_reference_points())
     wild = [(10.0 + 300.0 * i, 200.0, 0.1 * i) for i in range(5)]  # ~300 px/step * ~0.05 m/px / 0.1 s ~ 150 m/s
     state = _ground_state(wild)
 
@@ -216,7 +217,7 @@ def test_geometry_helpers_never_read_is_calibrated_as_metric():
     cf = from_cityflow_homography("c", "cam", np.eye(3), reprojection_error=1.0)
     assert motion_space_for(cf) == MotionSpace.IMAGE
     assert geometry_validity_for(cf) == GeometryValidity.WORLD_UNVALIDATED
-    survey = fit_planar_homography("c", "cam", make_reference_points())
+    survey = fit_synthetic_validated_homography("c", "cam", make_reference_points())
     assert motion_space_for(survey) == MotionSpace.WORLD
 
 

@@ -55,6 +55,7 @@ from anvesh.perception.ingestion import VideoFileFrameSource
 from anvesh.perception.pipeline import run_m1_pipeline
 from anvesh.perception.traffic_state import CongestionStateTracker, CongestionThresholds
 from anvesh.perception.tracking import ByteTrackYoloTracker
+from anvesh.perception.weights import checkpoint_version_label
 from anvesh.perception.windowing import build_traffic_state_timeline, generate_windows, tracks_in_window
 from anvesh.propagation.shockwave import flow_density_from_traffic_state
 from anvesh.storage.schemas import BaselineType, CameraRole, CandidateOutcome, MotionSpace
@@ -63,6 +64,12 @@ CONFIG_PATH = REPO_ROOT / "configs" / "experiment" / "m6_validation.toml"
 
 _EVIDENCE_THRESHOLD_FIELDS = {f.name for f in dataclasses.fields(EvidenceThresholds)}
 _CONGESTION_THRESHOLD_FIELDS = {f.name for f in dataclasses.fields(CongestionThresholds)}
+
+
+def _speed_cell(ts) -> str:
+    """A window's mean speed for display: the measured value, or "n/a" -- never a placeholder 0."""
+    measured = ts.measured_mean_speed()
+    return "n/a" if measured is None else f"{measured.value:.1f}"
 
 
 def _load_config() -> dict:
@@ -170,7 +177,7 @@ def _run_sequence(
         camera_id=result.camera_id,
         tracker=tracker,
         model_id=validation_cfg["model_name"],
-        model_version="pretrained",
+        model_version=checkpoint_version_label(tracker.model_id),
         max_missed_frames=validation_cfg["max_missed_frames"],
         partial_after_missed_frames=validation_cfg["partial_after_missed_frames"],
     )
@@ -266,7 +273,7 @@ def _print_sequence_report(r: SequenceResult) -> None:
     print(f"  {'window':>14} {'veh_count':>10} {'mean_speed(px/s)':>18} {'congestion_level':>18}")
     for window, agg in zip(r.windows, r.timeline):
         ts = agg.traffic_state
-        print(f"  [{window.start:>5.1f},{window.end:>5.1f})  {ts.vehicle_count:>10} {ts.mean_speed.value:>18.2f} {ts.congestion_level.value:>18}")
+        print(f"  [{window.start:>5.1f},{window.end:>5.1f})  {ts.vehicle_count:>10} {_speed_cell(ts):>18} {ts.congestion_level.value:>18}")
 
     print(f"  {'window':>14} {'outcome':>20} {'top-1':>8} {'belief':>8}")
     for window, ranking in r.per_window_rankings:

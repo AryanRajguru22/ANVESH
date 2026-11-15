@@ -12,6 +12,7 @@ from anvesh.feedback.update_engine import apply_feedback
 from anvesh.hypotheses.cause_model import HYPOTHESIS_IDS
 from anvesh.propagation.shockwave import predict_propagation
 from anvesh.storage.db import CorridorStateStore, FeedbackRecordStore, RankingStore
+from anvesh.storage.schemas import GeometryValidity
 from anvesh.storage.schemas import (
     CameraRole,
     CongestionLevel,
@@ -67,6 +68,7 @@ def _traffic_state(camera_id, vehicle_count, flow_rate):
         camera_id=camera_id, window_start=0.0, window_end=10.0, occupancy=min(1.0, vehicle_count / 20.0),
         mean_speed=Measurement(value=5.0, error=0.0), vehicle_count=vehicle_count, flow_rate=flow_rate,
         density=float(vehicle_count), congestion_level=CongestionLevel.BUILDING, motion_space=MotionSpace.WORLD,
+        geometry_validity=GeometryValidity.WORLD_VALIDATED,
     )
 
 

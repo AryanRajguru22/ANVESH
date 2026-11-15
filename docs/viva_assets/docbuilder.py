@@ -33,6 +33,9 @@ CALLOUT_STYLE = {  # kind -> (background, border, label)
 
 
 # ---------------------------------------------------------------- block constructors
+COVER_HEADER = "ANVESH  |  Intelligent Road Event Investigation & Traffic Intelligence"  # overridable by a build script
+
+
 def H1(t): return ("h1", t)
 def H2(t): return ("h2", t)
 def H3(t): return ("h3", t)
@@ -169,7 +172,7 @@ def build_pdf(blocks, out_path, title, subtitle, meta_lines, footer_text, toc_de
         canv.rect(0, Hh - 62 * mm, W, 62 * mm, stroke=0, fill=1)
         canv.setFillColor(colors.white)
         canv.setFont("DV-B", 11)
-        canv.drawString(LM, Hh - 22 * mm, "ANVESH  |  Intelligent Road Event Investigation & Traffic Intelligence")
+        canv.drawString(LM, Hh - 22 * mm, COVER_HEADER)
         canv.setFont("DV", 9)
         canv.drawString(LM, Hh - 30 * mm, "RESEARCH / DEMONSTRATION USE ONLY")
         canv.restoreState()
